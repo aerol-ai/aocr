@@ -18,58 +18,41 @@ When you run `docker push ttl.sh/my-image:5m`, the following sequence occurs:
 | :--- | :--- | :--- |
 | **Registry** | Docker Distribution v2 | Standard OCI-compliant registry. |
 | **Hook API** | Node.js (TypeScript) | Listens for registry events, parses TTLs, and handles tracking. |
+| **Auth Service** | Node.js (TypeScript) | Handles Docker Token Auth and PostgreSQL sync. |
 | **Reaper** | Node.js (TypeScript) | A cron job that purges expired images. |
 | **Storage** | GCS (Google Cloud Storage) | Backing storage for layers and manifests. |
-| **State** | Redis | Ephemeral storage for image metadata and TTL tracking. |
-| **Landing Page** | Next.js | Modern, responsive frontend for user documentation. |
-| **IaC** | Terraform & Ansible | Automated infrastructure provisioning and server configuration. |
+| **State (Metadata)** | PostgreSQL | Persistent storage for users, repositories, and image metadata. |
+| **Cache (Legacy)** | Redis | Ephemeral storage for hook events and legacy tracking. |
 
 ## 💾 State vs. Storage: How images are tracked
 
-A key aspect of `ttl.sh` is how it separates the actual image data from project metadata.
+`ttl.sh` separates the actual image data from project metadata for efficiency and persistence.
 
-### 1. The "Database" for Tracking: **Redis**
-Instead of a traditional relational database (like PostgreSQL), `ttl.sh` uses **Redis** to keep track of every image pushed to the registry.
-- **Tracking Set**: A Redis set named `current.images` stores all active `repository:tag` strings.
-- **Expiration Metadata**: For each image in that set, a Redis hash (keyed by the `repository:tag`) stores:
-    - `created`: Unix timestamp of when the image was pushed.
-    - `expires`: Unix timestamp of when the image should be deleted (calculated from the tag).
+### 1. The "Database" for Tracking: **PostgreSQL**
+The system uses **PostgreSQL** as the primary source of truth for repository and user metadata.
+- **Users**: Tracks authenticated users validated by the third-party service.
+- **Repositories**: Organizes images into organizations and repositories linked to users.
+- **Images**: Tracks specific tags, their creation time, and their calculated expiration timestamp.
 
 ### 2. The "Storage" for Image Data: **GCS**
-The actual image layers (blobs) and manifests are **not** stored in Redis. They are stored in **Google Cloud Storage (GCS)**.
+The actual image layers (blobs) and manifests are stored in **Google Cloud Storage (GCS)**.
 - The Docker Registry is configured to use GCS as its storage driver.
-- When the Reaper deletes an image, it sends a `DELETE` request to the registry API, which removes the manifest from GCS.
+- When an image is deleted (via the Reaper), the registry API removes the manifest and associated blobs from GCS.
 
 ## 🧹 The Reaper: How Deletions Work
 
-The **Reaper** is a background process that ensures nothing stays longer than its requested TTL.
+The **Reaper** ensures images are purged accurately according to their TTL.
 
-1.  **Cron Schedule**: The Reaper runs every minute (`* * * * *`).
-2.  **Evaluation**:
-    -   It fetches all tracked images from the `current.images` Redis set.
-    -   For each image, it reads the `expires` timestamp from the Redis hash.
+1.  **Cron Schedule**: Runs every minute (`* * * * *`).
+2.  **Evaluation**: Queries the **PostgreSQL** `images` table for records where `expires_at <= NOW()`.
 3.  **Purge Logic**:
-    -   If the current time > `expires`, the Reaper initiates a purge.
-    -   It first sends a `HEAD` request to the registry to get the manifest digest (the registry's `DELETE` API requires a digest, not a tag).
-    -   It then sends a `DELETE` request to `${REGISTRY_URL}/v2/${repository}/manifests/${digest}`.
-    -   Finally, it cleans up Redis by removing the image from the tracking set and deleting its metadata hash.
-
-## 🔌 Repository Hooks Configuration
-
-The registry is configured to talk to the Hook API via `registry/config.yml`:
-
-```yaml
-notifications:
-  endpoints:
-    - name: registry-hooks
-      url: __HOOK_URI__
-      headers:
-        Authorization: ["Token __HOOK_TOKEN__"]
-```
+    -   Requests the manifest digest from the registry.
+    -   Issues a `DELETE` request to the registry API for that digest.
+    -   Upon success, removes the metadata record from PostgreSQL.
 
 ## 🏗️ Deployment Flow
 
-Deployment is automated using a combination of **Terraform** and **Ansible**:
--   **Terraform**: Provisions the underlying infrastructure (likely VMs and GCS buckets).
--   **Ansible**: Configures the OS, installs Docker, pulls the repo, and starts the services (Registry, Hooks, Reaper, Landing page).
--   **Okteto**: Used for local development and debugging of individual services (`ttl-hooks`, `ttl-reaper`).
+`ttl.sh` supports two primary deployment methods:
+
+-   **Kubernetes (Helm)**: The recommended production path. The provided Helm chart manages all services, configures PostgreSQL/Redis, and handles secret management for JWT and GCS keys.
+-   **Docker Compose**: Ideal for local development and standalone setups.
