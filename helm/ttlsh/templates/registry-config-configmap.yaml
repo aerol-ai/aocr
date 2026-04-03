@@ -11,9 +11,11 @@ data:
     storage:
       delete:
         enabled: true
-      gcs:
-        bucket: {{ .Values.registry.gcs.bucket }}
-        keyfile: /etc/docker/registry/gcs.json
+      s3:
+        region: {{ .Values.registry.s3.region }}
+        bucket: {{ .Values.registry.s3.bucket }}
+        regionendpoint: {{ .Values.registry.s3.endpoint }}
+        v4auth: true
         rootdirectory: /
     http:
       addr: 0.0.0.0:{{ .Values.registry.port }}

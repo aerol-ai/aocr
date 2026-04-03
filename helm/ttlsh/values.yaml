@@ -12,7 +12,7 @@ image:
 # PostgreSQL Configuration
 postgres:
   enabled: true
-  image: postgres:15-alpine
+  image: postgres:17-alpine
   database: ttlsh
   user: ttlsh_user
   # Provide password in a secret or here (not recommended for prod)
@@ -31,14 +31,16 @@ auth:
 # Registry Configuration
 registry:
   port: 5000
-  gcs:
-    bucket: "replreg"
-    # Provide GCS key file in a secret
+  s3:
+    region: "us-east-1"
+    bucket: "ttlsh"
+    endpoint: "http://minio:9000"
+    # Provide access/secret keys in a secret
 
 # Redis Configuration
 redis:
   enabled: true
-  image: redis:7-alpine
+  image: redis:8.5-alpine
   password: "change-me"
 
 # Hooks & Reaper

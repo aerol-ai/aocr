@@ -20,7 +20,7 @@ When you run `docker push ttl.sh/my-image:5m`, the following sequence occurs:
 | **Hook API** | Node.js (TypeScript) | Listens for registry events, parses TTLs, and handles tracking. |
 | **Auth Service** | Node.js (TypeScript) | Handles Docker Token Auth and PostgreSQL sync. |
 | **Reaper** | Node.js (TypeScript) | A cron job that purges expired images. |
-| **Storage** | GCS (Google Cloud Storage) | Backing storage for layers and manifests. |
+| **Storage** | S3 / Minio | Backing storage for layers and manifests. |
 | **State (Metadata)** | PostgreSQL | Persistent storage for users, repositories, and image metadata. |
 | **Cache (Legacy)** | Redis | Ephemeral storage for hook events and legacy tracking. |
 
@@ -34,10 +34,10 @@ The system uses **PostgreSQL** as the primary source of truth for repository and
 - **Repositories**: Organizes images into organizations and repositories linked to users.
 - **Images**: Tracks specific tags, their creation time, and their calculated expiration timestamp.
 
-### 2. The "Storage" for Image Data: **GCS**
-The actual image layers (blobs) and manifests are stored in **Google Cloud Storage (GCS)**.
-- The Docker Registry is configured to use GCS as its storage driver.
-- When an image is deleted (via the Reaper), the registry API removes the manifest and associated blobs from GCS.
+### 2. The "Storage" for Image Data: **S3 / Minio**
+The actual image layers (blobs) and manifests are stored in an **S3-compatible storage** (like AWS S3 or Minio).
+- The Docker Registry is configured to use the `s3` storage driver.
+- When an image is deleted (via the Reaper), the registry API removes the manifest and associated blobs from the storage bucket.
 
 ## 🧹 The Reaper: How Deletions Work
 

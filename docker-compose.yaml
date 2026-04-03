@@ -27,11 +27,37 @@ services:
     env_file: ".env"
     environment:
       - PORT=5000
+      - HOOK_TOKEN=${HOOK_TOKEN:-placeholder}
+      - HOOK_URI=http://hooks:8000/v1/hook/registry-event
+      - REPLREG_HOST=localhost:5000
+      - REPLREG_SECRET=placeholder
+      - S3_REGION=us-east-1
+      - S3_BUCKET=ttlsh
+      - S3_ENDPOINT=http://minio:9000
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
     ports:
       - "5000:5000"
       - "5001:5001"
+    depends_on:
+      - minio
     networks:
       - ttlsh-network
+
+  minio:
+    image: minio/minio
+    container_name: ttlsh-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - ./minio/data:/data
+    networks:
+      - ttlsh-network
+    command: server /data --console-address ":9001"
 
   hooks:
     image: ghcr.io/replicatedhq/ttlsh-hooks:latest
@@ -89,7 +115,7 @@ services:
       - ttlsh-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.5-alpine
     container_name: ttlsh-redis
     restart: always
     pull_policy: always
@@ -103,7 +129,7 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD}
 
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: ttlsh-postgres
     restart: always
     environment:

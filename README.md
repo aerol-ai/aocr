@@ -53,11 +53,11 @@ helm install my-ttlsh . --values values.yaml
 ```
 
 > [!IMPORTANT]
-> Ensure you configure the required secrets (PostgreSQL password, JWT keys, GCS keys) in `values.yaml` or via `--set`.
+> Ensure you configure the required secrets (PostgreSQL password, JWT keys, and **S3/Minio credentials**) in `values.yaml` or via `--set`.
 
 ## 🐳 Docker Compose
 
-For local development or simple deployments, use Docker Compose:
+For local development or simple deployments, use Docker Compose. This setup includes a **Minio** container to simulate S3 storage locally.
 
 ```bash
 docker-compose up -d

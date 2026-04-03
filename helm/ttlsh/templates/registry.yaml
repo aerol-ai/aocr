@@ -24,6 +24,22 @@ spec:
           value: "{{ .Values.registry.port }}"
         - name: REPLREG_HOST
           value: "{{ .Values.global.domain }}"
+        - name: S3_REGION
+          value: {{ .Values.registry.s3.region | quote }}
+        - name: S3_BUCKET
+          value: {{ .Values.registry.s3.bucket | quote }}
+        - name: S3_ENDPOINT
+          value: {{ .Values.registry.s3.endpoint | quote }}
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "ttlsh.fullname" . }}-secrets
+              key: s3-access-key
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "ttlsh.fullname" . }}-secrets
+              key: s3-secret-key
         - name: HOOK_URI
           value: "http://{{ include "ttlsh.fullname" . }}-hooks:8000/v1/hook/registry-event"
         volumeMounts:

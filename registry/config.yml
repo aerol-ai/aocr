@@ -8,9 +8,11 @@ storage:
   delete:
     enabled: true
 
-  gcs:
-    bucket: replreg
-    keyfile: /etc/gcs.json
+  s3:
+    region: __S3_REGION__
+    bucket: __S3_BUCKET__
+    regionendpoint: __S3_ENDPOINT__
+    v4auth: true
     rootdirectory: /
 
 http:
