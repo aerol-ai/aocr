@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ttlsh.fullname" . }}-db-init
+data:
+  init.sql: |
+{{ .Files.Get "db/init.sql" | indent 4 }}

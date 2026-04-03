@@ -1,0 +1,53 @@
+# Default values for ttlsh.
+# This is a YAML-formatted file.
+
+global:
+  domain: "ttl.sh"
+
+image:
+  repository: ghcr.io/replicatedhq
+  pullPolicy: Always
+  tag: "latest"
+
+# PostgreSQL Configuration
+postgres:
+  enabled: true
+  image: postgres:15-alpine
+  database: ttlsh
+  user: ttlsh_user
+  # Provide password in a secret or here (not recommended for prod)
+  password: "change-me"
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Auth Service Configuration
+auth:
+  enabled: true
+  port: 8080
+  validationServiceUrl: "https://api.thirdparty.com/v1"
+  # Provide JWT_PRIVATE_KEY in a secret
+
+# Registry Configuration
+registry:
+  port: 5000
+  gcs:
+    bucket: "replreg"
+    # Provide GCS key file in a secret
+
+# Redis Configuration
+redis:
+  enabled: true
+  image: redis:7-alpine
+  password: "change-me"
+
+# Hooks & Reaper
+hooks:
+  port: 8000
+
+reaper:
+  schedule: "* * * * *"
+
+# Web Frontend
+web:
+  port: 3000

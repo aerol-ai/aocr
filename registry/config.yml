@@ -22,6 +22,13 @@ http:
     prometheus:
       enabled: false
 
+auth:
+  token:
+    realm: "https://__REPLREG_HOST__/v2/token"
+    service: "ttl.sh"
+    issuer: "ttl-auth"
+    rootcertbundle: /etc/docker/registry/auth.crt
+
 notifications:
   events:
     includereferences: true

@@ -4,41 +4,69 @@
 
 ## An ephemeral container registry for CI workflows.
 
-## What is ttl.sh?
+`ttl.sh` is an anonymous, expiring Docker container registry. It allows you to push images without authentication and have them automatically deleted after a specified duration.
 
-ttl.sh is an anonymous, expiring Docker container registry using the official Docker Registry image. This is a set of tools and configurations that can be used to deploy the registry without authentication, but with self-expiring images.
+## 🏗️ Architecture Overview
 
-# Development
+The system consists of four main components:
+1.  **Container Registry**: A standard Docker Distribution (v2) registry configured with a GCS backend and HTTP hooks.
+2.  **Hook API**: A Node.js service that receives notifications from the registry on every `push` event. It parses the image tag for a TTL (Time To Live) and tracks it.
+3.  **The Reaper**: A background cron job that periodically checks for expired images and purges them from the registry.
+4.  **Web Frontend**: A Next.js application providing a landing page with usage instructions and features.
 
-Development for the services in this project is done through [Okteto](https://replicated.okteto.dev).
+## 🛠️ Tools & Technologies
 
-## Setup
+-   **Backend**: Node.js, TypeScript, Express
+-   **Frontend**: Next.js, React, Tailwind CSS
+-   **Registry**: Docker Distribution v2
+-   **State**: Redis (for tracking image expiration)
+-   **Storage**: Google Cloud Storage (GCS)
+-   **Infrastructure**: Terraform, Ansible
+-   **Development**: Okteto
 
-1. Install the Okteto CLI (`brew install okteto`)
-2. Setup Okteto CLI (`okteto context use https://replicated.okteto.dev`)
-3. Setup Okteto context in kubectl (`okteto context update-kubeconfig`)
-4. Deploy your current branch. (from the ttl.sh root directory: `okteto pipeline deploy`)
+## 🚀 Quick Start
 
-## Debugging
+Push an image with a specific TTL (e.g., 5 minutes):
+```bash
+docker tag my-image ttl.sh/my-image:5m
+docker push ttl.sh/my-image:5m
+```
 
-Okteto is utilized for debugging. New build targets have been added to allow building and running each service in debug mode.
+The image will be available to pull for 5 minutes and then automatically deleted.
 
-1. Replace the default container in your Okteto environment with a development container.
-   1. From the root directory: `okteto up` or `okteto up <service name>`
-2. Run the build targets for the desired service:
-   1. ttl-hooks: `make deps build hooks`
-   2. ttl-reaper: `make deps build reap`
-3. Stop development and go back to the default container.
-   1. From the root directory: `okteto down` or `okteto down <service name>`
+- **Default TTL**: 24h
+- **Max TTL**: 24h
 
-## Example workflows
+For a deep dive into how `ttl.sh` works internally, see [understanding.md](./understanding.md).
 
-### Switching branches or rebasing
+# Deployment
 
-1. `git checkout my-new-branch` 
-2. `okteto pipeline deploy` 
-3. (make code changes)
-4. `okteto up`
-5. (test changes, find they don't work, make more changes)...
-6. `okteto down`
-7. (commit code, and be happy)
+`ttl.sh` is designed to be deployed using **Kubernetes (via Helm)** or **Docker Compose**.
+
+## ☸️ Kubernetes (Helm)
+
+The recommended way to deploy `ttl.sh` in production is using the provided Helm chart.
+
+```bash
+cd helm/ttlsh
+helm install my-ttlsh . --values values.yaml
+```
+
+> [!IMPORTANT]
+> Ensure you configure the required secrets (PostgreSQL password, JWT keys, GCS keys) in `values.yaml` or via `--set`.
+
+## 🐳 Docker Compose
+
+For local development or simple deployments, use Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+## 🛠️ Development
+
+Each service (`auth`, `hooks`, `web`) can be built and run locally using Docker or their respective package managers.
+
+- **Frontend**: `cd web && npm run dev`
+- **Hooks**: `cd hooks && npm start`
+- **Auth**: `cd auth && npm start`

@@ -70,6 +70,24 @@ services:
     networks:
       - ttlsh-network
 
+  auth:
+    image: ghcr.io/replicatedhq/ttlsh-auth:latest
+    build:
+      context: auth
+      dockerfile: Dockerfile
+    container_name: ttlsh-auth
+    restart: always
+    env_file: ".env"
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - VALIDATION_SERVICE_URL=${VALIDATION_SERVICE_URL}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
+    ports:
+      - "8080:8080"
+    networks:
+      - ttlsh-network
+
   redis:
     image: redis:7-alpine
     container_name: ttlsh-redis
@@ -83,6 +101,22 @@ services:
     volumes:
       - ./redis/data:/data
     command: redis-server --requirepass ${REDIS_PASSWORD}
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ttlsh-postgres
+    restart: always
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-ttlsh}
+      - POSTGRES_USER=${POSTGRES_USER:-ttlsh_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres/data:/var/lib/postgresql/data
+    networks:
+      - ttlsh-network
 
 networks:
   ttlsh-network:

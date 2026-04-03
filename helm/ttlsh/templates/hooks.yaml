@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ttlsh.fullname" . }}-hooks
+  labels:
+    {{- include "ttlsh.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ttlsh.name" . }}-hooks
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "ttlsh.name" . }}-hooks
+    spec:
+      containers:
+      - name: hooks
+        image: "{{ .Values.image.repository }}/ttlsh-hooks:{{ .Values.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.hooks.port }}
+        env:
+        - name: PORT
+          value: "{{ .Values.hooks.port }}"
+        - name: DATABASE_URL
+          value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "ttlsh.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "ttlsh.fullname" . }}-secrets
+              key: postgres-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ttlsh.fullname" . }}-hooks
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: {{ .Values.hooks.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "ttlsh.name" . }}-hooks
