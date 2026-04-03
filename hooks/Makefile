@@ -34,13 +34,13 @@ publish: publish-hooks publish-reap
 
 .PHONY: publish-hooks
 publish-hooks: test
-	docker build -f Dockerfile.hooks -t registry.heroku.com/ttlsh-hooks/web .
-	docker push registry.heroku.com/ttlsh-hooks/web
-	heroku container:release web -a ttlsh-hooks
+	docker build -f Dockerfile.hooks -t registry.heroku.com/aocr-hooks/web .
+	docker push registry.heroku.com/aocr-hooks/web
+	heroku container:release web -a aocr-hooks
 
 .PHONY: publish-reap
 publish-reap: test
-	docker build -f Dockerfile.reap -t registry.heroku.com/ttlsh-hooks/reap .
-	docker push registry.heroku.com/ttlsh-hooks/reap
-	heroku container:release reap -a ttlsh-hooks
+	docker build -f Dockerfile.reap -t registry.heroku.com/aocr-hooks/reap .
+	docker push registry.heroku.com/aocr-hooks/reap
+	heroku container:release reap -a aocr-hooks
 

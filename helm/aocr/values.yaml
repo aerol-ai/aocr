@@ -1,11 +1,11 @@
-# Default values for ttlsh.
+# Default values for aocr.
 # This is a YAML-formatted file.
 
 global:
-  domain: "ttl.sh"
+  domain: "aerol.ai"
 
 image:
-  repository: ghcr.io/replicatedhq
+  repository: ghcr.io/aerol-ai
   pullPolicy: Always
   tag: "latest"
 
@@ -13,8 +13,8 @@ image:
 postgres:
   enabled: true
   image: postgres:17-alpine
-  database: ttlsh
-  user: ttlsh_user
+  database: aocr
+  user: aocr_user
   # Provide password in a secret or here (not recommended for prod)
   password: "change-me"
   persistence:
@@ -33,7 +33,7 @@ registry:
   port: 5000
   s3:
     region: "us-east-1"
-    bucket: "ttlsh"
+    bucket: "aocr"
     endpoint: "http://minio:9000"
     # Provide access/secret keys in a secret
 

@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-postgres
+  name: {{ include "aocr.fullname" . }}-postgres
   labels:
-    {{- include "ttlsh.labels" . | nindent 4 }}
+    {{- include "aocr.labels" . | nindent 4 }}
 spec:
-  serviceName: {{ include "ttlsh.fullname" . }}-postgres
+  serviceName: {{ include "aocr.fullname" . }}-postgres
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "ttlsh.name" . }}-postgres
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-postgres
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "ttlsh.name" . }}-postgres
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-postgres
     spec:
       containers:
       - name: postgres
@@ -28,7 +28,7 @@ spec:
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: {{ include "ttlsh.fullname" . }}-secrets
+              name: {{ include "aocr.fullname" . }}-secrets
               key: postgres-password
         volumeMounts:
         - name: data
@@ -38,7 +38,7 @@ spec:
       volumes:
       - name: init-sql
         configMap:
-          name: {{ include "ttlsh.fullname" . }}-db-init
+          name: {{ include "aocr.fullname" . }}-db-init
   volumeClaimTemplates:
   - metadata:
       name: data
@@ -51,9 +51,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-postgres
+  name: {{ include "aocr.fullname" . }}-postgres
 spec:
   ports:
   - port: 5432
   selector:
-    app.kubernetes.io/name: {{ include "ttlsh.name" . }}-postgres
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-postgres

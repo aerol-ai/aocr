@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "aocr.fullname" . }}-reaper
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.reaper.schedule }}"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: reaper
+            image: "{{ .Values.image.repository }}/aocr-reaper:{{ .Values.image.tag }}"
+            env:
+            - name: REGISTRY_URL
+              value: "http://{{ include "aocr.fullname" . }}-registry"
+            - name: DATABASE_URL
+              value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "aocr.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aocr.fullname" . }}-secrets
+                  key: postgres-password
+          restartPolicy: OnFailure

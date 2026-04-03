@@ -9,7 +9,7 @@ export function Footer() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="text-center md:text-left">
             <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-              <span className="text-2xl font-bold font-mono">ttl.sh</span>
+              <span className="text-2xl font-bold font-mono">aocr (aerol.ai)</span>
             </div>
             <p className="text-muted-foreground text-sm">
               The ephemeral container registry.
@@ -18,7 +18,7 @@ export function Footer() {
 
           <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
             <a
-              href="https://github.com/replicatedhq/ttl.sh"
+              href="https://github.com/aerol-ai/aocr"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground transition-colors"
@@ -26,7 +26,7 @@ export function Footer() {
               GitHub
             </a>
             <a
-              href="https://github.com/replicatedhq/ttl.sh/issues"
+              href="https://github.com/aerol-ai/aocr/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground transition-colors"
@@ -34,12 +34,12 @@ export function Footer() {
               Issues
             </a>
             <a
-              href="https://www.replicated.com"
+              href="https://aerol.ai"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
-              Replicated
+              aerol.ai
             </a>
           </div>
         </div>
@@ -48,16 +48,16 @@ export function Footer() {
           <p className="text-sm text-muted-foreground flex items-center justify-center gap-1">
             Made with <Heart className="w-4 h-4 text-red-500 fill-red-500" /> by{" "}
             <a
-              href="https://www.replicated.com"
+              href="https://aerol.ai"
               target="_blank"
               rel="noopener noreferrer"
               className="text-foreground hover:text-accent transition-colors font-medium"
             >
-              Replicated
+              aerol.ai
             </a>
           </p>
           <p className="text-xs text-muted-foreground/60 mt-2">
-            © {new Date().getFullYear()} Replicated, Inc. All rights reserved.
+            © {new Date().getFullYear()} aerol.ai. All rights reserved.
           </p>
         </div>
       </div>

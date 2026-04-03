@@ -3,7 +3,7 @@ import * as process from "process";
 
 function initLogger(): any {
   const logOptions = {
-    name: process.env["LOG_NAME"] || "ttlsh",
+    name: process.env["LOG_NAME"] || "aocr",
     safe: true,
     prettyPrint: process.env["LOG_PRETTY"] || false,
   };

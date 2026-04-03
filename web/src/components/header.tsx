@@ -26,7 +26,7 @@ export function Header() {
     >
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
         <a href="/" className="flex items-center gap-2 group">
-          <span className="text-2xl font-bold font-mono group-hover:text-accent transition-colors">ttl.sh</span>
+          <span className="text-2xl font-bold font-mono group-hover:text-accent transition-colors">aocr (aerol.ai)</span>
         </a>
 
         {/* Desktop nav */}
@@ -44,7 +44,7 @@ export function Header() {
             How it works
           </a>
           <a
-            href="https://github.com/replicatedhq/ttl.sh"
+            href="https://github.com/aerol-ai/aocr"
             target="_blank"
             rel="noopener noreferrer"
             className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50 flex items-center gap-2"
@@ -89,7 +89,7 @@ export function Header() {
               How it works
             </a>
             <a
-              href="https://github.com/replicatedhq/ttl.sh"
+              href="https://github.com/aerol-ai/aocr"
               target="_blank"
               rel="noopener noreferrer"
               className="px-4 py-3 text-sm text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50 flex items-center gap-2"

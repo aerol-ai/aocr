@@ -1,55 +1,43 @@
-[![Develop on Okteto](https://okteto.com/develop-okteto.svg)](https://replicated.okteto.dev/deploy?repository=https://github.com/replicatedhq/ttl.sh&branch=main)
+# 🚀 aerol.ai / aocr
 
-# ttl.sh
+**aocr** (Authenticated OCI Container Registry) is a high-performance, authenticated Docker registry for the **aerol.ai** organization. It is designed to be deployed on Kubernetes via Helm, with automatic image tracking in PostgreSQL and storage in S3/Minio.
 
-## An ephemeral container registry for CI workflows.
+## ✨ Key Features
+-   **🔐 Authenticated Access**: All push/pull operations require a valid token validated against a central service.
+-   **📊 PostgreSQL Metadata**: Tracks users, organizations, repositories, and images.
+-   **📦 S3-Compatible Storage**: Supports AWS S3, Minio, and other S3-compatible backends.
+-   **🧹 Automatic Cleanup**: Includes a "Reaper" service to purge expired images.
+-   **☸️ Kubernetes Native**: Optimized for deployment via Helm.
 
-`ttl.sh` is an anonymous, expiring Docker container registry. It allows you to push images without authentication and have them automatically deleted after a specified duration.
-
-## 🏗️ Architecture Overview
-
-The system consists of four main components:
-1.  **Container Registry**: A standard Docker Distribution (v2) registry configured with a GCS backend and HTTP hooks.
-2.  **Hook API**: A Node.js service that receives notifications from the registry on every `push` event. It parses the image tag for a TTL (Time To Live) and tracks it.
-3.  **The Reaper**: A background cron job that periodically checks for expired images and purges them from the registry.
-4.  **Web Frontend**: A Next.js application providing a landing page with usage instructions and features.
-
-## 🛠️ Tools & Technologies
-
--   **Backend**: Node.js, TypeScript, Express
--   **Frontend**: Next.js, React, Tailwind CSS
--   **Registry**: Docker Distribution v2
--   **State**: Redis (for tracking image expiration)
--   **Storage**: Google Cloud Storage (GCS)
--   **Infrastructure**: Terraform, Ansible
--   **Development**: Okteto
+-   **Storage**: S3 / Minio
+-   **Infrastructure**: Helm (Kubernetes), Docker Compose
 
 ## 🚀 Quick Start
 
 Push an image with a specific TTL (e.g., 5 minutes):
 ```bash
-docker tag my-image ttl.sh/my-image:5m
-docker push ttl.sh/my-image:5m
+docker tag my-image aerol.ai/aocr/my-image:5m
+docker push aerol.ai/aocr/my-image:5m
 ```
 
-The image will be available to pull for 5 minutes and then automatically deleted.
+The image will be available to pull for 5 minutes (subject to authentication) and then automatically deleted.
 
 - **Default TTL**: 24h
 - **Max TTL**: 24h
 
-For a deep dive into how `ttl.sh` works internally, see [understanding.md](./understanding.md).
+For a deep dive into how **aocr** works internally, see [understanding.md](./understanding.md).
 
 # Deployment
 
-`ttl.sh` is designed to be deployed using **Kubernetes (via Helm)** or **Docker Compose**.
+**aocr** is designed to be deployed using **Kubernetes (via Helm)** or **Docker Compose**.
 
 ## ☸️ Kubernetes (Helm)
 
-The recommended way to deploy `ttl.sh` in production is using the provided Helm chart.
+The recommended way to deploy **aocr** in production is using the provided Helm chart.
 
 ```bash
-cd helm/ttlsh
-helm install my-ttlsh . --values values.yaml
+cd helm/aocr
+helm install my-aocr . --values values.yaml
 ```
 
 > [!IMPORTANT]

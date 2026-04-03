@@ -1,3 +1,6 @@
 deploy
 terraform/staging/knowledge/*
 .terraform
+
+**/.pnpm-store
+auth/node_modules

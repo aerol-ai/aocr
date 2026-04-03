@@ -1,48 +1,48 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-auth
+  name: {{ include "aocr.fullname" . }}-auth
   labels:
-    {{- include "ttlsh.labels" . | nindent 4 }}
+    {{- include "aocr.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "ttlsh.name" . }}-auth
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-auth
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "ttlsh.name" . }}-auth
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-auth
     spec:
       containers:
       - name: auth
-        image: "{{ .Values.image.repository }}/ttlsh-auth:{{ .Values.image.tag }}"
+        image: "{{ .Values.image.repository }}/aocr-auth:{{ .Values.image.tag }}"
         ports:
         - containerPort: {{ .Values.auth.port }}
         env:
         - name: DATABASE_URL
-          value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "ttlsh.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
+          value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "aocr.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
         - name: VALIDATION_SERVICE_URL
           value: {{ .Values.auth.validationServiceUrl }}
         - name: JWT_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "ttlsh.fullname" . }}-secrets
+              name: {{ include "aocr.fullname" . }}-secrets
               key: jwt-private-key
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: {{ include "ttlsh.fullname" . }}-secrets
+              name: {{ include "aocr.fullname" . }}-secrets
               key: postgres-password
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-auth
+  name: {{ include "aocr.fullname" . }}-auth
 spec:
   type: ClusterIP
   ports:
   - port: 8080
     targetPort: {{ .Values.auth.port }}
   selector:
-    app.kubernetes.io/name: {{ include "ttlsh.name" . }}-auth
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-auth

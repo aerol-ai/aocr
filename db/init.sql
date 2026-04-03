@@ -1,4 +1,4 @@
--- Database Initialization for ttl.sh Authenticated Registry
+-- Database Initialization for aocr (aerol.ai) Authenticated Registry
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

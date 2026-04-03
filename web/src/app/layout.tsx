@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'ttl.sh - Anonymous & Ephemeral OCI Registry',
-  description: 'Free, anonymous, and ephemeral OCI registry. No sign-up required. Push your images and they expire automatically.',
+  title: 'aocr (aerol.ai) - Authenticated OCI Registry',
+  description: 'High-performance, authenticated OCI registry for aerol.ai. Securely push and pull images with automatic TTL-based cleanup.',
   icons: {
     icon: [
       {

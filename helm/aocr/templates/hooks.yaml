@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aocr.fullname" . }}-hooks
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks
+    spec:
+      containers:
+      - name: hooks
+        image: "{{ .Values.image.repository }}/aocr-hooks:{{ .Values.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.hooks.port }}
+        env:
+        - name: PORT
+          value: "{{ .Values.hooks.port }}"
+        - name: DATABASE_URL
+          value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "aocr.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: postgres-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aocr.fullname" . }}-hooks
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: {{ .Values.hooks.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks

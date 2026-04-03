@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-redis
+  name: {{ include "aocr.fullname" . }}-redis
   labels:
-    {{- include "ttlsh.labels" . | nindent 4 }}
+    {{- include "aocr.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "ttlsh.name" . }}-redis
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-redis
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "ttlsh.name" . }}-redis
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-redis
     spec:
       containers:
       - name: redis
@@ -24,15 +24,15 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: {{ include "ttlsh.fullname" . }}-secrets
+              name: {{ include "aocr.fullname" . }}-secrets
               key: redis-password
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-redis
+  name: {{ include "aocr.fullname" . }}-redis
 spec:
   ports:
   - port: 6379
   selector:
-    app.kubernetes.io/name: {{ include "ttlsh.name" . }}-redis
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-redis

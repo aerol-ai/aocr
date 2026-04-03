@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aocr.fullname" . }}-web
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-web
+    spec:
+      containers:
+      - name: web
+        image: "{{ .Values.image.repository }}/aocr-web:{{ .Values.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.web.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aocr.fullname" . }}-web
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: {{ .Values.web.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-web

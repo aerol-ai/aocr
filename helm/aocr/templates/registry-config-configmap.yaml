@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-registry-config
+  name: {{ include "aocr.fullname" . }}-registry-config
 data:
   config.yml: |
     version: 0.1
@@ -24,13 +24,13 @@ data:
     auth:
       token:
         realm: "https://{{ .Values.global.domain }}/v2/token"
-        service: "ttl.sh"
-        issuer: "ttl-auth"
+        service: "aocr"
+        issuer: "aocr-auth"
         rootcertbundle: /etc/docker/registry/auth.crt
     notifications:
       endpoints:
         - name: registry-hooks
-          url: http://{{ include "ttlsh.fullname" . }}-hooks:8000/v1/hook/registry-event
+          url: http://{{ include "aocr.fullname" . }}-hooks:8000/v1/hook/registry-event
           timeout: 1s
           threshold: 10
           backoff: 1s

@@ -1,7 +1,7 @@
 {
   "name": "hooks",
   "version": "1.0.0",
-  "description": "ttlsh hooks",
+  "description": "aocr hooks",
   "license": "Apache-2.0",
   "main": "./build/server.js",
   "dependencies": {

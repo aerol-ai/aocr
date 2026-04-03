@@ -1,18 +1,17 @@
-# Understanding the Architecture of ttl.sh
+# 🧠 Understanding aocr (aerol.ai)
 
-This document provides a detailed technical deep dive into how `ttl.sh` manages ephemeral container images.
+An in-depth look at the architecture, data flow, and components of the authenticated registry system.
 
 ## 🔄 The Life of a `docker push`
 
-When you run `docker push ttl.sh/my-image:5m`, the following sequence occurs:
+When you run `docker push aerol.ai/aocr/my-image:5m`, the following sequence occurs:
 
-1.  **Registry Upload**: The Docker CLI authenticates (anonymously) and uploads the image layers and manifest to the registry.
+1.  **Registry Upload**: The Docker CLI authenticates (via token) and uploads the image layers and manifest to the registry.
 2.  **Notification Trigger**: Upon a successful push, the Docker Registry sends an HTTP POST event to the **Hook API** (`/v1/hook/registry-event`).
 3.  **Parsing the Tag**: The Hook API receives the event, extracts the repository (`my-image`) and tag (`5m`).
-4.  **Tracking in Redis**:
-    -   The tag `5m` is parsed into a duration (in milliseconds).
-    -   The Hook API adds the image (`my-image:5m`) to a Redis set called `current.images`.
-    -   It also creates a Redis hash for the image with two fields: `created` and `expires` (current time + duration).
+4.  **Tracking in PostgreSQL**:
+    -   The tag `5m` is parsed into a duration.
+    -   The Hook API updates the **PostgreSQL** `images` table with the metadata and expiration.
 
 | Component | Role | Technology |
 | :--- | :--- | :--- |
@@ -22,7 +21,7 @@ When you run `docker push ttl.sh/my-image:5m`, the following sequence occurs:
 | **Reaper** | Node.js (TypeScript) | A cron job that purges expired images. |
 | **Storage** | S3 / Minio | Backing storage for layers and manifests. |
 | **State (Metadata)** | PostgreSQL | Persistent storage for users, repositories, and image metadata. |
-| **Cache (Legacy)** | Redis | Ephemeral storage for hook events and legacy tracking. |
+| **Cache (Legacy)** | Redis | Ephemeral storage for hook events and legacy caching. |
 
 ## 💾 State vs. Storage: How images are tracked
 

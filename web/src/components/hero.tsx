@@ -12,8 +12,8 @@ export function Hero() {
   }, []);
 
   const commands = [
-    "docker build -t ttl.sh/my-image:1h .",
-    "docker push ttl.sh/my-image:1h",
+    "docker build -t aerol.ai/aocr/my-image:1h .",
+    "docker push aerol.ai/aocr/my-image:1h",
   ];
 
   const copyToClipboard = async (text: string, index: number) => {
@@ -57,7 +57,7 @@ export function Hero() {
         </p>
         
         <p className="text-lg text-muted-foreground/80 max-w-xl mx-auto mb-12 text-pretty">
-          Push any OCI artifact with a TTL. No auth, no config, no account.
+          Push any OCI artifact with a TTL. Securely authenticated for <strong>aerol.ai</strong>.
           <br className="hidden sm:block" />
           It expires automatically. Like magic.
         </p>
@@ -97,7 +97,7 @@ export function Hero() {
         {/* CTA buttons */}
         <div className="flex flex-wrap items-center justify-center gap-4 mt-10">
           <a
-            href="https://github.com/replicatedhq/ttl.sh"
+            href="https://github.com/aerol-ai/aocr"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-6 py-3 bg-accent text-accent-foreground rounded-lg font-semibold hover:bg-accent/90 transition-all hover:scale-105 shadow-lg shadow-accent/20"

@@ -11,8 +11,8 @@ const pool = new Pool({
 
 const VALIDATION_SERVICE_URL = process.env.VALIDATION_SERVICE_URL;
 const JWT_PRIVATE_KEY = process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n');
-const ISSUER = 'ttl-auth';
-const SERVICE = 'ttl.sh';
+const ISSUER = 'aocr-auth';
+const SERVICE = 'aerol.ai';
 
 app.use(express.json());
 

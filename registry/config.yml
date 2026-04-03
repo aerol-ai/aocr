@@ -27,8 +27,8 @@ http:
 auth:
   token:
     realm: "https://__REPLREG_HOST__/v2/token"
-    service: "ttl.sh"
-    issuer: "ttl-auth"
+    service: "aocr"
+    issuer: "aocr-auth"
     rootcertbundle: /etc/docker/registry/auth.crt
 
 notifications:

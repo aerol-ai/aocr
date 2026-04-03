@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-registry
+  name: {{ include "aocr.fullname" . }}-registry
   labels:
-    {{- include "ttlsh.labels" . | nindent 4 }}
+    {{- include "aocr.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "ttlsh.name" . }}-registry
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-registry
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "ttlsh.name" . }}-registry
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-registry
     spec:
       containers:
       - name: registry
-        image: "{{ .Values.image.repository }}/ttlsh-registry:{{ .Values.image.tag }}"
+        image: "{{ .Values.image.repository }}/aocr-registry:{{ .Values.image.tag }}"
         ports:
         - containerPort: {{ .Values.registry.port }}
         env:
@@ -33,15 +33,15 @@ spec:
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: {{ include "ttlsh.fullname" . }}-secrets
+              name: {{ include "aocr.fullname" . }}-secrets
               key: s3-access-key
         - name: AWS_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "ttlsh.fullname" . }}-secrets
+              name: {{ include "aocr.fullname" . }}-secrets
               key: s3-secret-key
         - name: HOOK_URI
-          value: "http://{{ include "ttlsh.fullname" . }}-hooks:8000/v1/hook/registry-event"
+          value: "http://{{ include "aocr.fullname" . }}-hooks:8000/v1/hook/registry-event"
         volumeMounts:
         - name: config
           mountPath: /etc/docker/registry/config.yml
@@ -52,10 +52,10 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: {{ include "ttlsh.fullname" . }}-registry-config
+          name: {{ include "aocr.fullname" . }}-registry-config
       - name: auth-crt
         secret:
-          secretName: {{ include "ttlsh.fullname" . }}-secrets
+          secretName: {{ include "aocr.fullname" . }}-secrets
           items:
           - key: jwt-public-key
             path: auth.crt
@@ -63,11 +63,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ttlsh.fullname" . }}-registry
+  name: {{ include "aocr.fullname" . }}-registry
 spec:
   type: ClusterIP
   ports:
   - port: 80
     targetPort: {{ .Values.registry.port }}
   selector:
-    app.kubernetes.io/name: {{ include "ttlsh.name" . }}-registry
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-registry

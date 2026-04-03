@@ -1,27 +1,27 @@
 services:
   web:
-    image: ghcr.io/replicatedhq/ttlsh-web:latest
+    image: ghcr.io/aerol-ai/aocr-web:latest
     build:
       context: web
       dockerfile: Dockerfile
       platforms:
         - "linux/amd64"
-    container_name: ttlsh-web
+    container_name: aocr-web
     restart: always
     pull_policy: always
     ports:
       - "3000:3000"
     networks:
-      - ttlsh-network
+      - aocr-network
 
   registry:
-    image: ghcr.io/replicatedhq/ttlsh-registry:latest
+    image: ghcr.io/aerol-ai/aocr-registry:latest
     build:
       context: registry
       dockerfile: Dockerfile
       platforms:
         - "linux/amd64"
-    container_name: ttlsh-registry
+    container_name: aocr-registry
     restart: always
     pull_policy: always
     env_file: ".env"
@@ -29,10 +29,10 @@ services:
       - PORT=5000
       - HOOK_TOKEN=${HOOK_TOKEN:-placeholder}
       - HOOK_URI=http://hooks:8000/v1/hook/registry-event
-      - REPLREG_HOST=localhost:5000
+      - REPLREG_HOST=aerol.ai
       - REPLREG_SECRET=placeholder
       - S3_REGION=us-east-1
-      - S3_BUCKET=ttlsh
+      - S3_BUCKET=aocr
       - S3_ENDPOINT=http://minio:9000
       - AWS_ACCESS_KEY_ID=minioadmin
       - AWS_SECRET_ACCESS_KEY=minioadmin
@@ -42,11 +42,11 @@ services:
     depends_on:
       - minio
     networks:
-      - ttlsh-network
+      - aocr-network
 
   minio:
     image: minio/minio
-    container_name: ttlsh-minio
+    container_name: aocr-minio
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -56,17 +56,17 @@ services:
     volumes:
       - ./minio/data:/data
     networks:
-      - ttlsh-network
+      - aocr-network
     command: server /data --console-address ":9001"
 
   hooks:
-    image: ghcr.io/replicatedhq/ttlsh-hooks:latest
+    image: ghcr.io/aerol-ai/aocr-hooks:latest
     build:
       context: hooks
       dockerfile: Dockerfile.hooks
       platforms:
         - "linux/amd64"
-    container_name: ttlsh-hooks
+    container_name: aocr-hooks
     restart: always
     pull_policy: always
     env_file: ".env"
@@ -77,16 +77,16 @@ services:
     ports:
       - "8000:8000"
     networks:
-      - ttlsh-network
+      - aocr-network
 
   reaper:
-    image: ghcr.io/replicatedhq/ttlsh-reaper:latest
+    image: ghcr.io/aerol-ai/aocr-reaper:latest
     build:
       context: hooks
       dockerfile: Dockerfile.reap
       platforms:
         - "linux/amd64"
-    container_name: ttlsh-reaper
+    container_name: aocr-reaper
     restart: always
     pull_policy: always
     env_file: ".env"
@@ -94,14 +94,14 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=${NODE_ENV:-production}
     networks:
-      - ttlsh-network
+      - aocr-network
 
   auth:
-    image: ghcr.io/replicatedhq/ttlsh-auth:latest
+    image: ghcr.io/aerol-ai/aocr-auth:latest
     build:
       context: auth
       dockerfile: Dockerfile
-    container_name: ttlsh-auth
+    container_name: aocr-auth
     restart: always
     env_file: ".env"
     environment:
@@ -112,29 +112,29 @@ services:
     ports:
       - "8080:8080"
     networks:
-      - ttlsh-network
+      - aocr-network
 
   redis:
     image: redis:8.5-alpine
-    container_name: ttlsh-redis
+    container_name: aocr-redis
     restart: always
     pull_policy: always
     env_file: ".env"
     ports:
       - "6379:6379"
     networks:
-      - ttlsh-network
+      - aocr-network
     volumes:
       - ./redis/data:/data
     command: redis-server --requirepass ${REDIS_PASSWORD}
 
   postgres:
     image: postgres:17-alpine
-    container_name: ttlsh-postgres
+    container_name: aocr-postgres
     restart: always
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:-ttlsh}
-      - POSTGRES_USER=${POSTGRES_USER:-ttlsh_user}
+      - POSTGRES_DB=${POSTGRES_DB:-aocr}
+      - POSTGRES_USER=${POSTGRES_USER:-aocr_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
@@ -142,8 +142,8 @@ services:
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./postgres/data:/var/lib/postgresql/data
     networks:
-      - ttlsh-network
+      - aocr-network
 
 networks:
-  ttlsh-network:
+  aocr-network:
     driver: bridge
