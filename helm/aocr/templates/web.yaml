@@ -17,6 +17,7 @@ spec:
       containers:
       - name: web
         image: "{{ .Values.image.repository }}/aocr-web:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - containerPort: {{ .Values.web.port }}
 ---

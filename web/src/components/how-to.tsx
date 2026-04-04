@@ -6,30 +6,30 @@ import { Check, Copy, Terminal } from "lucide-react";
 const examples = [
   {
     title: "Docker Image",
-    description: "Push any Docker image with a time-to-live",
+    description: "Push a normal image tag to the registry",
     commands: [
-      "docker build -t ttl.sh/my-app:2h .",
-      "docker push ttl.sh/my-app:2h",
-      "docker pull ttl.sh/my-app:2h",
+      "docker build -t aerol.ai/aocr/my-app:main .",
+      "docker push aerol.ai/aocr/my-app:main",
+      "docker pull aerol.ai/aocr/my-app:main",
     ],
   },
   {
     title: "Helm Chart",
-    description: "Push OCI Helm charts for testing",
+    description: "Push OCI Helm charts without custom tag syntax",
     commands: [
       "helm package ./my-chart",
-      "helm push my-chart-0.1.0.tgz oci://ttl.sh/charts",
-      "helm install my-release oci://ttl.sh/charts/my-chart --version 0.1.0",
+      "helm push my-chart-0.1.0.tgz oci://aerol.ai/charts",
+      "helm install my-release oci://aerol.ai/charts/my-chart --version 0.1.0",
     ],
   },
   {
     title: "GitHub Actions",
-    description: "Perfect for CI/CD workflows",
+    description: "Build and push standard tags in CI",
     commands: [
       "- name: Build and push",
       "  run: |",
-      "    docker build -t ttl.sh/${{ github.sha }}:1h .",
-      "    docker push ttl.sh/${{ github.sha }}:1h",
+      "    docker build -t aerol.ai/aocr/my-app:${{ github.sha }} .",
+      "    docker push aerol.ai/aocr/my-app:${{ github.sha }}",
     ],
   },
 ];
@@ -64,11 +64,11 @@ export function HowTo() {
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Just add a TTL to your tag. That's literally it.
+            Use standard OCI tags. The cleanup happens in the background.
             <br />
-            <span className="text-accent font-mono">:5m</span> <span className="text-muted-foreground/70">|</span>{" "}
-            <span className="text-accent font-mono">:1h</span> <span className="text-muted-foreground/70">|</span>{" "}
-            <span className="text-accent font-mono">:24h</span>
+            <span className="text-accent font-mono">:main</span> <span className="text-muted-foreground/70">|</span>{" "}
+            <span className="text-accent font-mono">:stable</span> <span className="text-muted-foreground/70">|</span>{" "}
+            <span className="text-accent font-mono">:sha-abc123</span>
           </p>
         </div>
 

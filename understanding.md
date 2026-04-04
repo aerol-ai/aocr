@@ -1,57 +1,50 @@
-# 🧠 Understanding aocr (aerol.ai)
+# Understanding aocr (aerol.ai)
 
-An in-depth look at the architecture, data flow, and components of the authenticated registry system.
+This document describes how the authenticated OCI registry works after the move away from TTL-based tags.
 
-## 🔄 The Life of a `docker push`
+## The Life of a `docker push`
 
-When you run `docker push aerol.ai/aocr/my-image:5m`, the following sequence occurs:
+When you run `docker push aerol.ai/aocr/my-image:main`, the flow is:
 
-1.  **Registry Upload**: The Docker CLI authenticates (via token) and uploads the image layers and manifest to the registry.
-2.  **Notification Trigger**: Upon a successful push, the Docker Registry sends an HTTP POST event to the **Hook API** (`/v1/hook/registry-event`).
-3.  **Parsing the Tag**: The Hook API receives the event, extracts the repository (`my-image`) and tag (`5m`).
-4.  **Tracking in PostgreSQL**:
-    -   The tag `5m` is parsed into a duration.
-    -   The Hook API updates the **PostgreSQL** `images` table with the metadata and expiration.
+1. **Registry upload**: Docker authenticates with the auth service and pushes the manifest and layers into the registry.
+2. **Notification trigger**: Docker Distribution sends a registry event to `hooks` at `/v1/hook/registry-event`.
+3. **Metadata sync**: The hook stores the repository and tag in PostgreSQL and updates `last_pushed_at` for that repository/tag pair.
+4. **Immediate cleanup**: After the push is recorded, the hook removes older tags for that repository and keeps the newest image.
+5. **Retention cleanup**: The scheduled reaper also scans PostgreSQL and removes every image except the newest one for each repository.
 
 | Component | Role | Technology |
 | :--- | :--- | :--- |
-| **Registry** | Docker Distribution v2 | Standard OCI-compliant registry. |
-| **Hook API** | Node.js (TypeScript) | Listens for registry events, parses TTLs, and handles tracking. |
-| **Auth Service** | Node.js (TypeScript) | Handles Docker Token Auth and PostgreSQL sync. |
-| **Reaper** | Node.js (TypeScript) | A cron job that purges expired images. |
-| **Storage** | S3 / Minio | Backing storage for layers and manifests. |
-| **State (Metadata)** | PostgreSQL | Persistent storage for users, repositories, and image metadata. |
-| **Cache (Legacy)** | Redis | Ephemeral storage for hook events and legacy caching. |
+| Registry | OCI registry and notification source | Docker Distribution v2 |
+| Hook API | Tracks pushed repositories/tags | Node.js + TypeScript |
+| Auth Service | Docker token auth and user sync | Node.js + TypeScript |
+| Reaper | Deletes stale manifests and metadata | Node.js + TypeScript |
+| Storage | Stores blobs and manifests | S3 / Minio |
+| Metadata | Tracks users, repositories, and image pushes | PostgreSQL |
+| Legacy cache | Optional compatibility cache | Redis |
 
-## 💾 State vs. Storage: How images are tracked
+## Metadata Model
 
-`ttl.sh` separates the actual image data from project metadata for efficiency and persistence.
+PostgreSQL is the source of truth:
 
-### 1. The "Database" for Tracking: **PostgreSQL**
-The system uses **PostgreSQL** as the primary source of truth for repository and user metadata.
-- **Users**: Tracks authenticated users validated by the third-party service.
-- **Repositories**: Organizes images into organizations and repositories linked to users.
-- **Images**: Tracks specific tags, their creation time, and their calculated expiration timestamp.
+- `users` stores authenticated users from the upstream validation service.
+- `repositories` stores the organization/repository namespace.
+- `images` stores pushed tags and `last_pushed_at`.
 
-### 2. The "Storage" for Image Data: **S3 / Minio**
-The actual image layers (blobs) and manifests are stored in an **S3-compatible storage** (like AWS S3 or Minio).
-- The Docker Registry is configured to use the `s3` storage driver.
-- When an image is deleted (via the Reaper), the registry API removes the manifest and associated blobs from the storage bucket.
+The registry stores layers and manifests in S3-compatible storage. PostgreSQL tells the reaper which tags are stale; the registry API performs the actual delete.
 
-## 🧹 The Reaper: How Deletions Work
+## Latest-only Reaper
 
-The **Reaper** ensures images are purged accurately according to their TTL.
+The reaper is repository-aware:
 
-1.  **Cron Schedule**: Runs every minute (`* * * * *`).
-2.  **Evaluation**: Queries the **PostgreSQL** `images` table for records where `expires_at <= NOW()`.
-3.  **Purge Logic**:
-    -   Requests the manifest digest from the registry.
-    -   Issues a `DELETE` request to the registry API for that digest.
-    -   Upon success, removes the metadata record from PostgreSQL.
+1. It ranks images within each `repository_id` by `last_pushed_at`.
+2. It keeps the newest image for that repository.
+3. It deletes every older manifest/tag it can resolve.
+4. It deletes the matching metadata rows after registry deletion succeeds or the tag is already gone.
 
-## 🏗️ Deployment Flow
+If `REPOSITORY_IDS` is empty, the scheduled reaper sweeps all repositories. If it is set, the cron job limits itself to those repository UUIDs.
 
-`ttl.sh` supports two primary deployment methods:
+## Deployment Paths
 
--   **Kubernetes (Helm)**: The recommended production path. The provided Helm chart manages all services, configures PostgreSQL/Redis, and handles secret management for JWT and GCS keys.
--   **Docker Compose**: Ideal for local development and standalone setups.
+- **Helm** packages the full stack for Kubernetes and now includes the registry config and database SQL inside the chart itself.
+- **Docker Compose** runs the same services for local development only.
+- **GitHub Actions** builds `auth`, `hooks`, `reaper`, `registry`, and `web`, pushes them to GHCR, and publishes the Helm chart as an OCI package.

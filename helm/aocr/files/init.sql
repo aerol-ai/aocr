@@ -1,4 +1,3 @@
--- Database Initialization for aocr (aerol.ai) Authenticated Registry
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users (

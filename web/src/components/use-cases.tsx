@@ -6,26 +6,26 @@ const useCases = [
   {
     icon: GitBranch,
     title: "CI/CD Pipelines",
-    description: "Build once, test everywhere. Push your image in the build stage, pull it in parallel test jobs. No credentials to manage or rotate.",
-    highlight: "Zero credential management",
+    description: "Build once, publish a commit tag, and let your server or cluster pull the image you just shipped.",
+    highlight: "Direct deploy handoff",
   },
   {
     icon: TestTube,
-    title: "Integration Testing",
-    description: "Spin up ephemeral environments with throwaway images. Test your containers in isolation, then let them disappear.",
-    highlight: "Clean slate, every time",
+    title: "Release Validation",
+    description: "Push candidate tags during validation and keep the repository trimmed to the newest artifact automatically.",
+    highlight: "Current image stays current",
   },
   {
     icon: Users,
-    title: "Open Source Projects",
-    description: "Contributors can test their changes without needing registry access. No secrets, no onboarding friction, just push and test.",
-    highlight: "Instant contributor experience",
+    title: "Team-owned Registries",
+    description: "Tie repository access to your auth service and keep audit-friendly ownership in PostgreSQL metadata.",
+    highlight: "Owned access model",
   },
   {
     icon: Boxes,
     title: "Local Development",
-    description: "Share images between your local machines, test on different architectures, or hand off to a teammate. Quick, easy, no setup.",
-    highlight: "Share without friction",
+    description: "Run the full stack with Docker Compose, including Postgres, Redis, Minio, hooks, auth, and the registry itself.",
+    highlight: "Single-stack dev setup",
   },
 ];
 
@@ -43,9 +43,9 @@ export function UseCases() {
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            From solo developers to massive CI/CD pipelines,
+            From single servers to Kubernetes clusters,
             <br />
-            ttl.sh fits wherever you need temporary images.
+            aocr fits wherever you need a controlled OCI registry.
           </p>
         </div>
 

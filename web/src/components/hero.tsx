@@ -12,8 +12,8 @@ export function Hero() {
   }, []);
 
   const commands = [
-    "docker build -t aerol.ai/aocr/my-image:1h .",
-    "docker push aerol.ai/aocr/my-image:1h",
+    "docker build -t aerol.ai/aocr/my-image:main .",
+    "docker push aerol.ai/aocr/my-image:main",
   ];
 
   const copyToClipboard = async (text: string, index: number) => {
@@ -38,7 +38,7 @@ export function Hero() {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-accent/30 bg-accent/5 text-sm text-accent mb-8 backdrop-blur-sm">
           <Sparkles className="w-4 h-4" />
-          <span className="font-medium">Free forever. Zero sign-up.</span>
+          <span className="font-medium">Authenticated access. Latest-only cleanup.</span>
         </div>
         
         {/* Main heading with gradient */}
@@ -48,18 +48,18 @@ export function Hero() {
           </span>
           <br />
           <span className="bg-gradient-to-r from-accent via-accent to-accent/70 bg-clip-text text-transparent">
-            Forget.
+            Deploy.
           </span>
         </h1>
         
         <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto mb-4 text-pretty font-light">
-          The ephemeral container registry that just works.
+          The authenticated container registry for aerol.ai workloads.
         </p>
         
         <p className="text-lg text-muted-foreground/80 max-w-xl mx-auto mb-12 text-pretty">
-          Push any OCI artifact with a TTL. Securely authenticated for <strong>aerol.ai</strong>.
+          Push standard OCI tags. Securely authenticated for <strong>aerol.ai</strong>.
           <br className="hidden sm:block" />
-          It expires automatically. Like magic.
+          The reaper keeps only the newest image in each repository.
         </p>
 
         {/* Terminal */}
@@ -89,7 +89,7 @@ export function Hero() {
               </div>
             ))}
             <div className="pt-3 border-t border-border/30 text-muted-foreground text-xs">
-              <span className="text-accent/70">#</span> Available worldwide for 1 hour. Then it vanishes. ✨
+              <span className="text-accent/70">#</span> Push with normal tags. Older images are cleaned up automatically.
             </div>
           </div>
         </div>

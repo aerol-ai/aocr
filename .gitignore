@@ -1,6 +1,17 @@
-deploy
-terraform/staging/knowledge/*
-.terraform
+.env
+.production.env
 
-**/.pnpm-store
-auth/node_modules
+auth/dist/
+auth/node_modules/
+
+hooks/build/
+hooks/node_modules/
+
+web/.next/
+web/node_modules/
+
+**/.pnpm-store/
+
+minio/data/
+postgres/data/
+redis/data/

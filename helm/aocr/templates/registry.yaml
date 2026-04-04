@@ -17,6 +17,7 @@ spec:
       containers:
       - name: registry
         image: "{{ .Values.image.repository }}/aocr-registry:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - containerPort: {{ .Values.registry.port }}
         env:
@@ -24,6 +25,11 @@ spec:
           value: "{{ .Values.registry.port }}"
         - name: REPLREG_HOST
           value: "{{ .Values.global.domain }}"
+        - name: REPLREG_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: replreg-secret
         - name: S3_REGION
           value: {{ .Values.registry.s3.region | quote }}
         - name: S3_BUCKET
@@ -42,6 +48,11 @@ spec:
               key: s3-secret-key
         - name: HOOK_URI
           value: "http://{{ include "aocr.fullname" . }}-hooks:8000/v1/hook/registry-event"
+        - name: HOOK_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: hook-token
         volumeMounts:
         - name: config
           mountPath: /etc/docker/registry/config.yml
@@ -67,7 +78,7 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 80
+  - port: {{ .Values.registry.port }}
     targetPort: {{ .Values.registry.port }}
   selector:
     app.kubernetes.io/name: {{ include "aocr.name" . }}-registry

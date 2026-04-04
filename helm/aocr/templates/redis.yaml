@@ -17,9 +17,10 @@ spec:
       containers:
       - name: redis
         image: {{ .Values.redis.image }}
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 6379
-        command: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+        command: ["/bin/sh", "-c", "exec redis-server --requirepass \"$REDIS_PASSWORD\""]
         env:
         - name: REDIS_PASSWORD
           valueFrom:

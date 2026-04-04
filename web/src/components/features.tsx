@@ -5,38 +5,38 @@ import { Shield, Zap, Globe, Lock, Clock, Workflow } from "lucide-react";
 const features = [
   {
     icon: Shield,
-    title: "Zero Authentication",
-    description: "No tokens. No passwords. No API keys to rotate. Push and pull without any credentials whatsoever.",
+    title: "Authenticated Access",
+    description: "Docker token auth sits in front of every push and pull so repository access is controlled from day one.",
     gradient: "from-green-500 to-emerald-500",
   },
   {
     icon: Clock,
-    title: "Auto-Expiring",
-    description: "Set your TTL from minutes to 24 hours. When time's up, the image vanishes. No cleanup, no bloat.",
+    title: "Latest-only Cleanup",
+    description: "The reaper keeps the newest image for each repository and removes the older ones automatically.",
     gradient: "from-blue-500 to-cyan-500",
   },
   {
     icon: Zap,
     title: "Blazing Fast",
-    description: "Global CDN-backed infrastructure. Pull your images lightning fast from anywhere in the world.",
+    description: "A small service surface with registry notifications keeps image publishing and cleanup straightforward.",
     gradient: "from-yellow-500 to-orange-500",
   },
   {
     icon: Globe,
     title: "OCI Compatible",
-    description: "Works with Docker, Podman, Helm charts, and any OCI-compliant tooling. Standards-based, zero lock-in.",
+    description: "Works with Docker, Helm, and other OCI-native tooling. Standard tags in, standard pulls out.",
     gradient: "from-purple-500 to-pink-500",
   },
   {
     icon: Lock,
-    title: "Privacy First",
-    description: "We don't track. We don't log. We don't even know what you're pushing. It's none of our business.",
+    title: "S3-backed Storage",
+    description: "Manifests and blobs live in S3-compatible storage while PostgreSQL keeps the metadata model clean.",
     gradient: "from-red-500 to-rose-500",
   },
   {
     icon: Workflow,
     title: "CI/CD Native",
-    description: "Built for pipelines. No secrets to configure, no credentials to leak. Just works in any CI system.",
+    description: "The repository now ships with GitHub Actions for build, GHCR publish, and SSH deployment to your server.",
     gradient: "from-indigo-500 to-violet-500",
   },
 ];
@@ -55,9 +55,9 @@ export function Features() {
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            We removed everything annoying about container registries.
+            Built for controlled delivery instead of throwaway tags.
             <br />
-            What's left is pure simplicity.
+            Push a normal image and let the platform keep the current one.
           </p>
         </div>
 

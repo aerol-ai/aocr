@@ -1,0 +1,45 @@
+version: 0.1
+
+log:
+  level: info
+  formatter: text
+
+storage:
+  delete:
+    enabled: true
+
+  s3:
+    region: __S3_REGION__
+    bucket: __S3_BUCKET__
+    regionendpoint: __S3_ENDPOINT__
+    v4auth: true
+    rootdirectory: /
+
+http:
+  addr: 0.0.0.0:__PORT__
+  secret: __REPLREG_SECRET__
+  host: __REPLREG_HOST__
+  debug:
+    addr: 0.0.0.0:5001
+    prometheus:
+      enabled: false
+
+auth:
+  token:
+    realm: "https://__REPLREG_HOST__/v2/token"
+    service: "aocr"
+    issuer: "aocr-auth"
+    rootcertbundle: /etc/docker/registry/auth.crt
+
+notifications:
+  events:
+    includereferences: true
+  endpoints:
+    - name: registry-hooks
+      disabled: false
+      url: __HOOK_URI__
+      headers:
+        Authorization: ["Token __HOOK_TOKEN__"]
+      timeout: 1s
+      threshold: 10
+      backoff: 1s

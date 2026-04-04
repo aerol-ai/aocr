@@ -4,4 +4,4 @@ metadata:
   name: {{ include "aocr.fullname" . }}-db-init
 data:
   init.sql: |
-{{ .Files.Get "db/init.sql" | indent 4 }}
+{{ .Files.Get "files/init.sql" | indent 4 }}

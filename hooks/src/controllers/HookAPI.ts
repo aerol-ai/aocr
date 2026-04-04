@@ -6,26 +6,15 @@ import {
   HeaderParams,
   BodyParams,
   Req} from "ts-express-decorators";
-import * as parseDuration from "parse-duration";
-import * as redis from "redis";
-import { promisify } from "util";
-import { Pool } from "pg";
+import { createPool } from "../util/database";
+import { reapObsoleteImages } from "../util/imageRetention";
+import { cachePushedImage } from "../util/redis";
 
 interface ErrorResponse {
   error: any;
 }
 
-const client = redis.createClient({url: process.env["REDISCLOUD_URL"]});
-const saddAsync = promisify(client.sadd).bind(client);
-const hsetAsync = promisify(client.hset).bind(client);
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const durationRegex = /^(?=\d+[ywdhms])(( ?\d+y)?(?!\d))?(( ?\d+w)?(?!\d))?(( ?\d+d)?(?!\d))?(( ?\d+h)?(?!\d))?(( ?\d+m)?(?!\d))?(( ?\d+s)?(?!\d))?( ?\d+ms)?$/;
-const defaultDuration = 24 * 60 * 60 * 1000; // 24h
-const maxDuration = 24 * 60 * 60 * 1000; // 24h
+const pool = createPool();
 
 @Controller("/v1/hook")
 export class HookAPI {
@@ -48,6 +37,8 @@ export class HookAPI {
       return {};
     }
 
+    const repositoriesToReap = new Set<string>();
+
     for (const event of body.events) {
       if (event.action === "push") {
         const image = event.target.repository;
@@ -58,24 +49,12 @@ export class HookAPI {
         }
 
         const imageWithTag = `${image}:${tag}`;
-
-        console.log(`parsing tag ${tag}`);
-        let expiresIn = durationfromTag(tag);
-        if (expiresIn <= 0) {
-          expiresIn = defaultDuration;
-        }
-        if (expiresIn > maxDuration) {
-          expiresIn = maxDuration;
-        }
-
-        const now = new Date().getTime();
-        const then = now + expiresIn;
+        const pushedAt = new Date();
 
         // Redis (legacy/cache)
-        await saddAsync("current.images", imageWithTag);
-        await hsetAsync(imageWithTag, "created", now, "expires", then);
+        await cachePushedImage(imageWithTag, pushedAt);
 
-        // Postgres (New Metadata Store)
+        // Postgres metadata store
         try {
           const [org, repo] = image.split('/');
           if (org && repo) {
@@ -90,11 +69,12 @@ export class HookAPI {
               const repoId = repoRes.rows[0].id;
 
               await pgClient.query(
-                'INSERT INTO images (repository_id, tag, expires_at) VALUES ($1, $2, $3) ON CONFLICT (repository_id, tag) DO UPDATE SET expires_at = $3',
-                [repoId, tag, new Date(then)]
+                "INSERT INTO images (repository_id, tag, last_pushed_at) VALUES ($1, $2, $3) ON CONFLICT (repository_id, tag) DO UPDATE SET last_pushed_at = EXCLUDED.last_pushed_at",
+                [repoId, tag, pushedAt]
               );
 
               await pgClient.query('COMMIT');
+              repositoriesToReap.add(repoId);
             } catch (err) {
               await pgClient.query('ROLLBACK');
               console.error('Error syncing to Postgres:', err);
@@ -108,13 +88,17 @@ export class HookAPI {
       }
     }
 
+    for (const repositoryId of repositoriesToReap) {
+      try {
+        await reapObsoleteImages({
+          repositoryIds: [repositoryId],
+          trigger: "push",
+        });
+      } catch (err) {
+        console.error(`Error reaping stale images for repository ${repositoryId}:`, err);
+      }
+    }
+
     return {};
   }
-}
-
-function durationfromTag(tag: string): number {
-  if (!durationRegex.test(tag)) {
-    return -1;
-  }
-  return parseDuration(tag);
 }

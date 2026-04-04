@@ -1,11 +1,9 @@
 services:
   web:
-    image: ghcr.io/aerol-ai/aocr-web:latest
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-web:${IMAGE_TAG:-latest}
     build:
       context: web
       dockerfile: Dockerfile
-      platforms:
-        - "linux/amd64"
     container_name: aocr-web
     restart: always
     pull_policy: always
@@ -15,12 +13,10 @@ services:
       - aocr-network
 
   registry:
-    image: ghcr.io/aerol-ai/aocr-registry:latest
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-registry:${IMAGE_TAG:-latest}
     build:
       context: registry
       dockerfile: Dockerfile
-      platforms:
-        - "linux/amd64"
     container_name: aocr-registry
     restart: always
     pull_policy: always
@@ -29,18 +25,19 @@ services:
       - PORT=5000
       - HOOK_TOKEN=${HOOK_TOKEN:-placeholder}
       - HOOK_URI=http://hooks:8000/v1/hook/registry-event
-      - REPLREG_HOST=aerol.ai
-      - REPLREG_SECRET=placeholder
-      - S3_REGION=us-east-1
-      - S3_BUCKET=aocr
-      - S3_ENDPOINT=http://minio:9000
-      - AWS_ACCESS_KEY_ID=minioadmin
-      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - REPLREG_HOST=${REPLREG_HOST:-aerol.ai}
+      - REPLREG_SECRET=${REPLREG_SECRET:-placeholder}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_BUCKET=${S3_BUCKET:-aocr}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://minio:9000}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
     ports:
       - "5000:5000"
       - "5001:5001"
     depends_on:
       - minio
+      - hooks
     networks:
       - aocr-network
 
@@ -60,12 +57,10 @@ services:
     command: server /data --console-address ":9001"
 
   hooks:
-    image: ghcr.io/aerol-ai/aocr-hooks:latest
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-hooks:${IMAGE_TAG:-latest}
     build:
       context: hooks
       dockerfile: Dockerfile.hooks
-      platforms:
-        - "linux/amd64"
     container_name: aocr-hooks
     restart: always
     pull_policy: always
@@ -74,18 +69,24 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=8000
+      - HOOK_TOKEN=${HOOK_TOKEN:-placeholder}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-aocr_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aocr}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     ports:
       - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
     networks:
       - aocr-network
 
   reaper:
-    image: ghcr.io/aerol-ai/aocr-reaper:latest
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-reaper:${IMAGE_TAG:-latest}
     build:
       context: hooks
       dockerfile: Dockerfile.reap
-      platforms:
-        - "linux/amd64"
     container_name: aocr-reaper
     restart: always
     pull_policy: always
@@ -93,11 +94,22 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=${NODE_ENV:-production}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-aocr_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aocr}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REGISTRY_URL=http://registry:5000
+      - "REAPER_SCHEDULE=${REAPER_SCHEDULE:-* * * * *}"
+      - REPOSITORY_IDS=${REPOSITORY_IDS:-}
+    depends_on:
+      - postgres
+      - redis
+      - registry
     networks:
       - aocr-network
 
   auth:
-    image: ghcr.io/aerol-ai/aocr-auth:latest
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-auth:${IMAGE_TAG:-latest}
     build:
       context: auth
       dockerfile: Dockerfile
@@ -106,11 +118,13 @@ services:
     env_file: ".env"
     environment:
       - PORT=8080
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-aocr_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aocr}
       - VALIDATION_SERVICE_URL=${VALIDATION_SERVICE_URL}
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
     ports:
       - "8080:8080"
+    depends_on:
+      - postgres
     networks:
       - aocr-network
 

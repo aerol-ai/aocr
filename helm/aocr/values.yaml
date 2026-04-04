@@ -13,6 +13,8 @@ image:
 postgres:
   enabled: true
   image: postgres:17-alpine
+  host: ""
+  port: 5432
   database: aocr
   user: aocr_user
   # Provide password in a secret or here (not recommended for prod)
@@ -25,17 +27,20 @@ postgres:
 auth:
   enabled: true
   port: 8080
-  validationServiceUrl: "https://api.thirdparty.com/v1"
-  # Provide JWT_PRIVATE_KEY in a secret
+  validationServiceUrl: "https://api.thirdparty.com/api/auth/info"
+  jwtPrivateKey: ""
+  jwtPublicKey: ""
 
 # Registry Configuration
 registry:
   port: 5000
+  replregSecret: "change-me"
   s3:
     region: "us-east-1"
     bucket: "aocr"
     endpoint: "http://minio:9000"
-    # Provide access/secret keys in a secret
+    accessKey: ""
+    secretKey: ""
 
 # Redis Configuration
 redis:
@@ -46,9 +51,12 @@ redis:
 # Hooks & Reaper
 hooks:
   port: 8000
+  token: "change-me"
 
 reaper:
   schedule: "* * * * *"
+  # Leave empty to sweep all repositories, or set repository UUIDs to limit the cron job scope.
+  repositoryIds: []
 
 # Web Frontend
 web:

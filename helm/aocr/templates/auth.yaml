@@ -17,23 +17,30 @@ spec:
       containers:
       - name: auth
         image: "{{ .Values.image.repository }}/aocr-auth:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - containerPort: {{ .Values.auth.port }}
         env:
-        - name: DATABASE_URL
-          value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "aocr.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
-        - name: VALIDATION_SERVICE_URL
-          value: {{ .Values.auth.validationServiceUrl }}
-        - name: JWT_PRIVATE_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "aocr.fullname" . }}-secrets
-              key: jwt-private-key
+        - name: POSTGRES_HOST
+          value: {{ default (printf "%s-postgres" (include "aocr.fullname" .)) .Values.postgres.host | quote }}
+        - name: POSTGRES_PORT
+          value: {{ .Values.postgres.port | quote }}
+        - name: POSTGRES_DB
+          value: {{ .Values.postgres.database | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgres.user | quote }}
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: postgres-password
+        - name: VALIDATION_SERVICE_URL
+          value: {{ .Values.auth.validationServiceUrl | quote }}
+        - name: JWT_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: jwt-private-key
 ---
 apiVersion: v1
 kind: Service

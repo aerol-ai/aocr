@@ -17,18 +17,41 @@ spec:
       containers:
       - name: hooks
         image: "{{ .Values.image.repository }}/aocr-hooks:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
         - containerPort: {{ .Values.hooks.port }}
         env:
         - name: PORT
           value: "{{ .Values.hooks.port }}"
-        - name: DATABASE_URL
-          value: "postgres://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "aocr.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"
+        - name: HOOK_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: hook-token
+        - name: POSTGRES_HOST
+          value: {{ default (printf "%s-postgres" (include "aocr.fullname" .)) .Values.postgres.host | quote }}
+        - name: POSTGRES_PORT
+          value: {{ .Values.postgres.port | quote }}
+        - name: POSTGRES_DB
+          value: {{ .Values.postgres.database | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgres.user | quote }}
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: postgres-password
+        {{- if .Values.redis.enabled }}
+        - name: REDIS_HOST
+          value: {{ printf "%s-redis" (include "aocr.fullname" .) | quote }}
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: redis-password
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

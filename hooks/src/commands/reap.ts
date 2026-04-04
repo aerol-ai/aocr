@@ -1,24 +1,13 @@
 import * as util from "util";
 import { CronJob } from "cron";
 import { logger } from "../logger";
-import * as redis from "redis";
-import { promisify } from "util";
-import * as rp from "request-promise";
-import { Pool } from "pg";
+import { getConfiguredRepositoryIds, reapObsoleteImages } from "../util/imageRetention";
 
-const registryUrl = process.env["REGISTRY_URL"] || "https://ttl.sh";
-const client = redis.createClient({url: process.env["REDISCLOUD_URL"]});
-const smembersAsync = promisify(client.smembers).bind(client);
-const sremAsync = promisify(client.srem).bind(client);
-const hgetAsync = promisify(client.hget).bind(client);
-const delAsync = promisify(client.del).bind(client);
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+const reaperSchedule = process.env["REAPER_SCHEDULE"] || "* * * * *";
+const runOnce = ["1", "true", "yes"].indexOf((process.env["REAPER_RUN_ONCE"] || "").toLowerCase()) >= 0;
 
 exports.name = "reap";
-exports.describe = "find and purge expirable images";
+exports.describe = "remove older images and keep the latest image per repository";
 exports.builder = {
 
 };
@@ -36,23 +25,34 @@ async function main(argv): Promise<any> {
     process.exit();
   });
 
+  if (runOnce) {
+    await reapObsoleteImages({
+      repositoryIds: getConfiguredRepositoryIds(),
+      trigger: "run-once",
+    });
+    return;
+  }
+
   let jobRunning: boolean = false;
 
   const job = new CronJob({
-    cronTime: "* * * * *",
+    cronTime: reaperSchedule,
     onTick: async () => {
       if (jobRunning) {
         console.log("-----> previous reap job is still running, skipping");
         return;
       }
 
-      console.log("-----> beginning to reap expired images");
+      console.log("-----> beginning to reap stale images");
       jobRunning = true;
 
       try {
-        await reapExpiredImages();
+        await reapObsoleteImages({
+          repositoryIds: getConfiguredRepositoryIds(),
+          trigger: "cron",
+        });
       } catch (err) {
-        console.log("failed to reap expired images:", err);
+        console.log("failed to reap stale images:", err);
       } finally {
         jobRunning = false;
       }
@@ -61,72 +61,4 @@ async function main(argv): Promise<any> {
   });
 
   job.start();
-}
-
-async function reapExpiredImages() {
-  const pgClient = await pool.connect();
-  try {
-    const expiredImagesRes = await pgClient.query(`
-      SELECT i.id, i.tag, r.organization, r.name 
-      FROM images i
-      JOIN repositories r ON i.repository_id = r.id
-      WHERE i.expires_at <= NOW()
-    `);
-
-    console.log(`   there are ${expiredImagesRes.rows.length} expired images to purge`);
-    
-    for (const row of expiredImagesRes.rows) {
-      const image = `${row.organization}/${row.name}:${row.tag}`;
-      const repoPath = `${row.organization}/${row.name}`;
-      
-      try {
-        const headers = {
-          Accept: "application/vnd.docker.distribution.manifest.v2+json",
-        };
-
-        // Get the manifest from the tag
-        const getOptions = {
-          method: "HEAD",
-          uri: `${registryUrl}/v2/${repoPath}/manifests/${row.tag}`,
-          headers,
-          resolveWithFullResponse: true,
-          simple: false,
-        };
-        const getResponse = await rp(getOptions);
-
-        if (getResponse.statusCode === 404) {
-          await pgClient.query('DELETE FROM images WHERE id = $1', [row.id]);
-          continue;
-        }
-
-        const digest = getResponse.headers.etag.replace(/"/g, "");
-        const deleteURI = `${registryUrl}/v2/${repoPath}/manifests/${digest}`;
-
-        // Remove from the registry
-        const options = {
-          method: "DELETE",
-          uri: deleteURI,
-          headers,
-          resolveWithFullResponse: true,
-          simple: false,
-        };
-
-        const deleteResponse = await rp(options);
-        if (deleteResponse.statusCode === 202 || deleteResponse.statusCode === 204 || deleteResponse.statusCode === 404) {
-          console.log(`expiring ${image}`);
-          await pgClient.query('DELETE FROM images WHERE id = $1', [row.id]);
-          
-          // Also cleanup Redis (legacy)
-          await sremAsync("current.images", image);
-          await delAsync(image);
-        } else {
-          console.log(`failed to delete ${image} manifest: status ${deleteResponse.statusCode}`);
-        }
-      } catch (err) {
-        console.log(`failed to evaluate image ${image}:`, err);
-      }
-    }
-  } finally {
-    pgClient.release();
-  }
 }
