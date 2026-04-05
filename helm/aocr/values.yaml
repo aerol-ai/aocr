@@ -45,7 +45,7 @@ registry:
 # Redis Configuration
 redis:
   enabled: true
-  image: redis:8.5-alpine
+  image: redis:7.4-alpine
   password: "change-me"
 
 # Hooks & Reaper
