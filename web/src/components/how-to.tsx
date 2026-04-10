@@ -6,22 +6,22 @@ import { Check, Copy, Terminal } from "lucide-react";
 const examples = [
   {
     title: "Docker Image",
-    description: "Authenticate once, then push or pull a normal image tag",
+    description: "Authenticate with your app username or email, then push or pull a normal image tag",
     commands: [
-      "echo \"$AEROL_TOKEN\" | docker login aerol.ai -u \"$AEROL_USERNAME\" --password-stdin",
-      "docker build -t aerol.ai/aocr/my-app:main .",
-      "docker push aerol.ai/aocr/my-app:main",
-      "docker pull aerol.ai/aocr/my-app:main",
+      "echo \"$AEROL_TOKEN\" | docker login aocr.aerol.ai -u \"$AEROL_LOGIN\" --password-stdin",
+      "docker build -t aocr.aerol.ai/aocr/my-app:main .",
+      "docker push aocr.aerol.ai/aocr/my-app:main",
+      "docker pull aocr.aerol.ai/aocr/my-app:main",
     ],
   },
   {
     title: "Helm Chart",
     description: "Authenticate first, then push OCI Helm charts",
     commands: [
-      "echo \"$AEROL_TOKEN\" | helm registry login aerol.ai -u \"$AEROL_USERNAME\" --password-stdin",
+      "echo \"$AEROL_TOKEN\" | helm registry login aocr.aerol.ai -u \"$AEROL_LOGIN\" --password-stdin",
       "helm package ./my-chart",
-      "helm push my-chart-0.1.0.tgz oci://aerol.ai/charts",
-      "helm install my-release oci://aerol.ai/charts/my-chart --version 0.1.0",
+      "helm push my-chart-0.1.0.tgz oci://aocr.aerol.ai/charts",
+      "helm install my-release oci://aocr.aerol.ai/charts/my-chart --version 0.1.0",
     ],
   },
   {
@@ -29,11 +29,11 @@ const examples = [
     description: "Validate a token in CI before pushing standard tags",
     commands: [
       "- name: Log in to aerol registry",
-      "  run: echo \"${{ secrets.AEROL_TOKEN }}\" | docker login aerol.ai -u \"${{ secrets.AEROL_USERNAME }}\" --password-stdin",
+      "  run: echo \"${{ secrets.AEROL_TOKEN }}\" | docker login aocr.aerol.ai -u \"${{ secrets.AEROL_LOGIN }}\" --password-stdin",
       "- name: Build and push",
       "  run: |",
-      "    docker build -t aerol.ai/aocr/my-app:${{ github.sha }} .",
-      "    docker push aerol.ai/aocr/my-app:${{ github.sha }}",
+      "    docker build -t aocr.aerol.ai/aocr/my-app:${{ github.sha }} .",
+      "    docker push aocr.aerol.ai/aocr/my-app:${{ github.sha }}",
     ],
   },
 ];
@@ -68,9 +68,9 @@ export function HowTo() {
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Authenticate with a validated token, then use standard OCI tags.
+            Use your app.aerol.ai username, or email if no username exists, together with a validated token.
             <br />
-            The registry hook keeps metadata in sync and cleans up older tags after each push.
+            The internal hook secret never leaves the registry stack; end users only need their app login identity and token.
           </p>
         </div>
 

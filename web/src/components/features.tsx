@@ -6,7 +6,7 @@ const features = [
   {
     icon: Shield,
     title: "Authenticated Access",
-    description: "Validated registry tokens sit in front of every push and pull, and signed hooks keep post-push metadata updates trusted.",
+    description: "Users log in with their app username or email plus a validated token, and internal signed hooks keep post-push metadata updates trusted.",
     gradient: "from-green-500 to-emerald-500",
   },
   {

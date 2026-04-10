@@ -1,10 +1,10 @@
-# Understanding aocr (aerol.ai)
+# Understanding aocr
 
 This document describes how the authenticated OCI registry works after the move away from TTL-based tags.
 
 ## The Life of a `docker push`
 
-When you run `docker push aerol.ai/aocr/my-image:main`, the flow is:
+When you run `docker push <registry-host>/aocr/my-image:main`, the flow is:
 
 1. **Registry upload**: Docker authenticates with the auth service and pushes the manifest and layers into the registry.
 2. **Notification trigger**: Docker Distribution sends a registry event to `hooks` at `/v1/hook/registry-event`.

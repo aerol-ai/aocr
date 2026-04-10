@@ -12,9 +12,9 @@ export function Hero() {
   }, []);
 
   const commands = [
-    "docker build -t aerol.ai/aocr/my-image:main .",
-    "echo \"$AEROL_TOKEN\" | docker login aocr.aerol.ai -u \"$AEROL_USERNAME\" --password-stdin",
-    "docker push aerol.ai/aocr/my-image:main",
+    "docker build -t aocr.aerol.ai/aocr/my-image:main .",
+    "echo \"$AEROL_TOKEN\" | docker login aocr.aerol.ai -u \"$AEROL_LOGIN\" --password-stdin",
+    "docker push aocr.aerol.ai/aocr/my-image:main",
   ];
 
   const copyToClipboard = async (text: string, index: number) => {
@@ -58,9 +58,9 @@ export function Hero() {
         </p>
         
         <p className="text-lg text-muted-foreground/80 max-w-xl mx-auto mb-12 text-pretty">
-          Log in with a validated aerol token, then push standard OCI tags.
+          Log in with your app.aerol.ai username or email plus a validated token.
           <br className="hidden sm:block" />
-          The registry validates your token first, then a signed hook records the push and reaps older images.
+          The registry validates the token first, then an internal signed hook records the push and reaps older images.
         </p>
 
         {/* Terminal */}
@@ -90,7 +90,7 @@ export function Hero() {
               </div>
             ))}
             <div className="pt-3 border-t border-border/30 text-muted-foreground text-xs">
-              <span className="text-accent/70">#</span> `/v2/token` validates your token first. The registry then signs its hook call before cleanup runs.
+              <span className="text-accent/70">#</span> Users provide the app token. The Helm hook secret stays internal to the registry and hooks service.
             </div>
           </div>
         </div>

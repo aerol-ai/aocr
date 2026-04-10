@@ -1,8 +1,11 @@
 # aerol.ai / aocr
 
-**aocr** is an authenticated OCI registry for **aerol.ai**. It stores image metadata in PostgreSQL, stores layers/manifests in S3-compatible storage, and automatically removes older tags so each repository keeps only its latest image.
+**aocr** is an open-source authenticated OCI registry. It stores image metadata in PostgreSQL, stores layers and manifests in S3-compatible storage, and automatically removes older tags so each repository keeps only its latest image.
 
-## Key Features
+`aocr.aerol.ai` is one deployed instance of this repository. The instructions below explain how to use that hosted registry as an end user. If you want to deploy your own instance, follow [SELF_HOSTING.md](./SELF_HOSTING.md).
+
+## What This Repository Provides
+
 - **Authenticated access** with Docker token auth.
 - **PAT-backed validation** against an upstream `/api/auth/info` endpoint.
 - **Repository-aware cleanup** with a reaper that keeps the newest image per repository.
@@ -10,90 +13,45 @@
 - **S3-compatible storage** for manifests and layers.
 - **Helm for Kubernetes and Docker Compose for local development**.
 
-## Quick Start
+## Use The Hosted Registry
 
-Push a standard tag. No TTL suffix is required:
+These steps are for the public deployment at `aocr.aerol.ai`.
+
+1. Sign in to `app.aerol.ai`.
+2. Create or copy your registry token.
+3. Use your `app.aerol.ai` username as the Docker login name. If your account does not expose a username, use the validated email instead.
+
+The token is the password. The login name is only used to match the validated user profile.
 
 ```bash
-docker tag my-image aerol.ai/aocr/my-image:main
-docker push aerol.ai/aocr/my-image:main
+export AEROL_LOGIN="your-app-username-or-email"
+export AEROL_TOKEN="your-token-from-app-aerol-ai"
+
+echo "$AEROL_TOKEN" | docker login aocr.aerol.ai -u "$AEROL_LOGIN" --password-stdin
+docker tag my-image aocr.aerol.ai/aocr/my-image:main
+docker push aocr.aerol.ai/aocr/my-image:main
+docker pull aocr.aerol.ai/aocr/my-image:main
 ```
+
+How hosted login works:
+- The auth service accepts the token as the password for registry login.
+- The presented login name must match the validated user profile's `id`, `username`, or `email`.
+- End users never need the internal webhook secret used by the deployment.
 
 When a newer image is pushed to the same repository, the hook immediately starts removing older image records and registry manifests for that repository. The scheduled reaper still runs separately and sweeps the database, keeping only the newest image per repository.
 
-For the architecture flow, see [understanding.md](./understanding.md).
+## Deploy Your Own
 
-## Deployment
+If you want to run your own aocr instance:
 
-### Kubernetes with Helm
+- Follow [SELF_HOSTING.md](./SELF_HOSTING.md) for Helm and Docker Compose setup.
+- Replace `aocr.aerol.ai` with your own registry hostname.
+- Point `auth.validationServiceUrl` at your own auth-info endpoint.
+- Issue your own user tokens from your own application or identity layer.
 
-```bash
-helm install aocr oci://ghcr.io/aerol-ai/charts/aocr \
-  --namespace aerol-system \
-  --create-namespace \
-  --version <published-chart-version> \
-  --set image.repository="ghcr.io/aerol-ai" \
-  --set image.tag="latest" \
-  --set global.domain="aocr.aerol.ai" \
-  --set postgres.password="CHANGE_ME_POSTGRES_PASSWORD" \
-  --set redis.password="CHANGE_ME_REDIS_PASSWORD" \
-  --set hooks.token="CHANGE_ME_HOOK_SHARED_SECRET" \
-  --set registry.replregSecret="CHANGE_ME_REGISTRY_HTTP_SECRET" \
-  --set registry.s3.region="us-east-1" \
-  --set registry.s3.bucket="aocr" \
-  --set registry.s3.endpoint="https://s3.amazonaws.com" \
-  --set registry.s3.accessKey="CHANGE_ME_S3_ACCESS_KEY" \
-  --set registry.s3.secretKey="CHANGE_ME_S3_SECRET_KEY" \
-  --set auth.validationServiceUrl="https://anek.ai/api/auth/info" \
-  --set-file auth.jwtPrivateKey="/path/to/jwt-private.pem" \
-  --set-file auth.jwtPublicCertificate="/path/to/jwt-public.crt"
-```
+## Architecture
 
-Required values and what they do:
-- `postgres.password`: password used by the in-cluster PostgreSQL instance.
-- `redis.password`: password used by the in-cluster Redis instance.
-- `hooks.token`: shared secret used by the registry notification webhook. The registry sends `Authorization: Token <hooks.token>` and the hooks service rejects notifications if it does not match.
-- `registry.replregSecret`: Docker Distribution HTTP secret. This should be a stable random string for the registry instance.
-- `registry.s3.accessKey` and `registry.s3.secretKey`: credentials for the S3-compatible object store where image layers and manifests are stored.
-- `auth.jwtPrivateKey`: private key used by the auth service to sign Docker registry bearer tokens.
-- `auth.jwtPublicCertificate`: PEM-encoded X.509 certificate bundle mounted into the registry so it can verify the JWTs signed by `auth.jwtPrivateKey`.
-
-Why the JWT key pair exists:
-- The auth service issues the bearer token that Docker uses after login.
-- The registry must verify that token before allowing push or pull.
-- The private key stays only with the auth service.
-- The matching certificate is mounted into the registry as `auth.crt` and referenced by the registry token configuration.
-
-Important:
-- `auth.jwtPublicCertificate` must contain `-----BEGIN CERTIFICATE-----`, not `-----BEGIN PUBLIC KEY-----`.
-- `auth.jwtPublicKey` remains as a deprecated compatibility alias, but if you use it, it still has to contain a certificate bundle, not a raw public key.
-
-Why these are passed during Helm install:
-- The chart is generic and cannot safely hardcode production secrets.
-- Helm values are how you bind your environment-specific configuration to the chart at deploy time.
-- For PEM files, use `--set-file` instead of `--set`, because multiline keys are awkward and error-prone on the command line.
-
-If you prefer, you can put the same values into a dedicated production values file and install with:
-
-```bash
-helm install aocr oci://ghcr.io/aerol-ai/charts/aocr \
-  --namespace aerol-system \
-  --create-namespace \
-  --version <published-chart-version> \
-  -f values-prod.yaml
-```
-
-### Docker Compose
-
-For local development only:
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-`REPOSITORY_IDS` is optional. Leave it empty to sweep all repositories, or set one or more UUIDs to limit the cron job scope.
-`VALIDATION_SERVICE_URL` should point to the upstream auth-info endpoint that accepts `Authorization: Bearer <ank_...>` and returns user identity details.
+For the request and cleanup flow, see [understanding.md](./understanding.md).
 
 ## GitHub Actions
 
