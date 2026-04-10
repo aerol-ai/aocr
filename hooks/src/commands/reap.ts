@@ -35,7 +35,7 @@ async function main(argv): Promise<any> {
 
   let jobRunning: boolean = false;
 
-  const job = new CronJob({
+  CronJob.from({
     cronTime: reaperSchedule,
     onTick: async () => {
       if (jobRunning) {
@@ -59,6 +59,4 @@ async function main(argv): Promise<any> {
     },
     start: true,
   });
-
-  job.start();
 }

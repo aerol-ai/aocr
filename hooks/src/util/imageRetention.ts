@@ -1,9 +1,11 @@
-import * as rp from "request-promise";
 import { createPool } from "./database";
 import { removeCachedImage } from "./redis";
 
 const registryUrl = (process.env["REGISTRY_URL"] || "http://registry:5000").replace(/\/+$/, "");
 const pool = createPool();
+const manifestHeaders = {
+  Accept: "application/vnd.docker.distribution.manifest.v2+json",
+};
 
 interface ReapOptions {
   repositoryIds?: string[];
@@ -79,22 +81,17 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
           continue;
         }
 
-        const deleteResponse = await rp({
+        const deleteResponse = await fetch(`${registryUrl}/v2/${repoPath}/manifests/${digest}`, {
           method: "DELETE",
-          uri: `${registryUrl}/v2/${repoPath}/manifests/${digest}`,
-          headers: {
-            Accept: "application/vnd.docker.distribution.manifest.v2+json",
-          },
-          resolveWithFullResponse: true,
-          simple: false,
+          headers: manifestHeaders,
         });
 
-        if (deleteResponse.statusCode === 202 || deleteResponse.statusCode === 204 || deleteResponse.statusCode === 404) {
+        if (deleteResponse.status === 202 || deleteResponse.status === 204 || deleteResponse.status === 404) {
           console.log(`purging stale image ${image}`);
           await pgClient.query("DELETE FROM images WHERE id = $1", [row.id]);
           await removeCachedImage(image);
         } else {
-          console.log(`failed to delete ${image} manifest: status ${deleteResponse.statusCode}`);
+          console.log(`failed to delete ${image} manifest: status ${deleteResponse.status}`);
         }
       } catch (err) {
         console.log(`failed to evaluate image ${image}:`, err);
@@ -108,21 +105,16 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
 }
 
 async function getDigestForTag(repoPath: string, tag: string): Promise<string | null> {
-  const response = await rp({
+  const response = await fetch(`${registryUrl}/v2/${repoPath}/manifests/${tag}`, {
     method: "HEAD",
-    uri: `${registryUrl}/v2/${repoPath}/manifests/${tag}`,
-    headers: {
-      Accept: "application/vnd.docker.distribution.manifest.v2+json",
-    },
-    resolveWithFullResponse: true,
-    simple: false,
+    headers: manifestHeaders,
   });
 
-  if (response.statusCode === 404) {
+  if (response.status === 404) {
     return null;
   }
 
-  const digestHeader = response.headers["docker-content-digest"] || response.headers.etag;
+  const digestHeader = response.headers.get("docker-content-digest") || response.headers.get("etag");
   if (digestHeader == null) {
     throw new Error(`missing docker-content-digest header for ${repoPath}:${tag}`);
   }

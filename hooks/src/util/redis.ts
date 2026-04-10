@@ -1,7 +1,6 @@
-import * as redis from "redis";
-import { promisify } from "util";
+import { createClient } from "redis";
 
-type RedisClient = ReturnType<typeof redis.createClient>;
+type RedisClient = ReturnType<typeof createClient>;
 
 function getEnv(name: string): string | undefined {
   const value = process.env[name];
@@ -39,30 +38,48 @@ function createOptionalRedisClient(): RedisClient | null {
     return null;
   }
 
-  return redis.createClient(redisUrl);
+  return createClient({ url: redisUrl });
 }
 
 const client = createOptionalRedisClient();
-const saddAsync = client == null ? null : promisify(client.sadd).bind(client);
-const hsetAsync = client == null ? null : promisify(client.hset).bind(client);
-const sremAsync = client == null ? null : promisify(client.srem).bind(client);
-const delAsync = client == null ? null : promisify(client.del).bind(client);
+if (client != null) {
+  client.on("error", (err) => {
+    console.warn("redis client error:", err);
+  });
+
+  client.connect().catch((err) => {
+    console.warn("failed to initialize redis client:", err);
+  });
+}
+
+async function getClient(): Promise<RedisClient | null> {
+  if (client == null || !client.isReady) {
+    return null;
+  }
+
+  return client;
+}
 
 export async function cachePushedImage(imageWithTag: string, pushedAt: Date): Promise<void> {
-  if (client == null || saddAsync == null || hsetAsync == null) {
+  const redisClient = await getClient();
+  if (redisClient == null) {
     return;
   }
 
-  const timestamp = pushedAt.getTime();
-  await saddAsync("current.images", imageWithTag);
-  await hsetAsync(imageWithTag, "created", timestamp, "lastPushed", timestamp);
+  const timestamp = String(pushedAt.getTime());
+  await redisClient.sAdd("current.images", imageWithTag);
+  await redisClient.hSet(imageWithTag, {
+    created: timestamp,
+    lastPushed: timestamp,
+  });
 }
 
 export async function removeCachedImage(imageWithTag: string): Promise<void> {
-  if (client == null || sremAsync == null || delAsync == null) {
+  const redisClient = await getClient();
+  if (redisClient == null) {
     return;
   }
 
-  await sremAsync("current.images", imageWithTag);
-  await delAsync(imageWithTag);
+  await redisClient.sRem("current.images", imageWithTag);
+  await redisClient.del(imageWithTag);
 }

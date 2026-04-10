@@ -6,7 +6,6 @@
   "main": "./build/server.js",
   "dependencies": {
     "@types/node": "^11.9.5",
-    "apac": "^3.0.2",
     "body-parser": "^2.2.2",
     "cors": "^2.8.5",
     "cron": "^4.4.0",
@@ -15,13 +14,11 @@
     "left-pad": "^1.1.3",
     "lodash": "^4.18.1",
     "moment": "^2.30.1",
+    "pg": "^8.11.3",
     "pino": "^10.3.1",
     "pino-pretty": "^2.6.1",
     "randomstring": "^1.3.1",
-    "redis": "^2.8.0",
-    "pg": "^8.11.3",
-    "request": "^2.88.0",
-    "request-promise": "^4.2.4",
+    "redis": "^5.11.0",
     "simple-oauth2": "^5.1.0",
     "source-map-support": "^0.5.10",
     "ts-express-decorators": "^5.14.1",
@@ -31,14 +28,7 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/lodash": "^4.17.24",
-    "@types/mocha": "^5.2.6",
-    "chai": "^6.2.2",
-    "istanbul": "^0.4.5",
-    "mocha": "^11.7.5",
-    "mocha-typescript": "^1.0.23",
-    "ts-node": "^10.9.2",
     "tslint": "^5.13.0",
-    "typemoq": "^2.1.0",
     "typescript": "^5.9.3"
   },
   "scripts": {

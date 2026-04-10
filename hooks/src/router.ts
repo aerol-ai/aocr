@@ -1,8 +1,8 @@
 import * as _ from "lodash";
+import * as crypto from "crypto";
 
 import * as express from "express";
 import * as util from "util";
-import * as uuid from "uuid";
 import { logger } from "./logger";
 
 export interface Response<T> {
@@ -120,7 +120,7 @@ export const preRequest = (req: express.Request, reqId: string) => {
 };
 
 export const requestId = (req: express.Request, handlerName: string) => {
-  const id = `${handlerName}:${uuid.v4().replace("-", "").substring(0, 8)}`;
+  const id = `${handlerName}:${crypto.randomBytes(4).toString("hex")}`;
 
   const clientID: string = req.headers["x-request-uuid"] as string;
 
