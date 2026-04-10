@@ -2,5 +2,5 @@ apiVersion: v2
 name: aocr
 description: Authenticated OCI Container Registry (aerol.ai)
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 1.0.1
+appVersion: "1.0.1"
