@@ -4,10 +4,19 @@ set -eu
 
 SOURCE_CONFIG="/etc/docker/registry/config.yml"
 RUNTIME_CONFIG="/tmp/registry-config.yml"
+AUTH_CERT_BUNDLE_PATH="${AUTH_CERT_BUNDLE_PATH:-/etc/docker/registry/auth.crt}"
 NEEDS_RENDER="false"
 
 escape_sed_replacement() {
     printf '%s' "$1" | sed 's/[&|\\]/\\&/g'
+}
+
+validate_token_root_certificate() {
+    if [ ! -s "$AUTH_CERT_BUNDLE_PATH" ] || ! grep -q "BEGIN CERTIFICATE" "$AUTH_CERT_BUNDLE_PATH"; then
+        echo "registry token auth requires a PEM-encoded X.509 certificate bundle at $AUTH_CERT_BUNDLE_PATH" >&2
+        echo "provide auth.jwtPublicCertificate (BEGIN CERTIFICATE), not a raw public key (BEGIN PUBLIC KEY)" >&2
+        exit 1
+    fi
 }
 
 if [ "$#" -gt 0 ]; then
@@ -23,6 +32,7 @@ else
 fi
 
 if [ "$NEEDS_RENDER" = "true" ]; then
+    validate_token_root_certificate
     sed \
         -e "s|__PORT__|$(escape_sed_replacement "${PORT}")|g" \
         -e "s|__HOOK_TOKEN__|$(escape_sed_replacement "${HOOK_TOKEN}")|g" \

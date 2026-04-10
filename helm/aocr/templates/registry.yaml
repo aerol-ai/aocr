@@ -68,7 +68,7 @@ spec:
         secret:
           secretName: {{ include "aocr.fullname" . }}-secrets
           items:
-          - key: jwt-public-key
+          - key: jwt-public-cert
             path: auth.crt
 ---
 apiVersion: v1

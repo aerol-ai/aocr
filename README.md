@@ -46,7 +46,7 @@ helm install aocr oci://ghcr.io/aerol-ai/charts/aocr \
   --set registry.s3.secretKey="CHANGE_ME_S3_SECRET_KEY" \
   --set auth.validationServiceUrl="https://anek.ai/api/auth/info" \
   --set-file auth.jwtPrivateKey="/path/to/jwt-private.pem" \
-  --set-file auth.jwtPublicKey="/path/to/jwt-public.pem"
+  --set-file auth.jwtPublicCertificate="/path/to/jwt-public.crt"
 ```
 
 Required values and what they do:
@@ -56,13 +56,17 @@ Required values and what they do:
 - `registry.replregSecret`: Docker Distribution HTTP secret. This should be a stable random string for the registry instance.
 - `registry.s3.accessKey` and `registry.s3.secretKey`: credentials for the S3-compatible object store where image layers and manifests are stored.
 - `auth.jwtPrivateKey`: private key used by the auth service to sign Docker registry bearer tokens.
-- `auth.jwtPublicKey`: public key mounted into the registry so it can verify the JWTs signed by `auth.jwtPrivateKey`.
+- `auth.jwtPublicCertificate`: PEM-encoded X.509 certificate bundle mounted into the registry so it can verify the JWTs signed by `auth.jwtPrivateKey`.
 
 Why the JWT key pair exists:
 - The auth service issues the bearer token that Docker uses after login.
 - The registry must verify that token before allowing push or pull.
 - The private key stays only with the auth service.
-- The matching public key is mounted into the registry as `auth.crt` and referenced by the registry token configuration.
+- The matching certificate is mounted into the registry as `auth.crt` and referenced by the registry token configuration.
+
+Important:
+- `auth.jwtPublicCertificate` must contain `-----BEGIN CERTIFICATE-----`, not `-----BEGIN PUBLIC KEY-----`.
+- `auth.jwtPublicKey` remains as a deprecated compatibility alias, but if you use it, it still has to contain a certificate bundle, not a raw public key.
 
 Why these are passed during Helm install:
 - The chart is generic and cannot safely hardcode production secrets.

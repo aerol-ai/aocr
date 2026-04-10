@@ -29,6 +29,10 @@ auth:
   port: 8080
   validationServiceUrl: "https://api.thirdparty.com/api/auth/info"
   jwtPrivateKey: ""
+  # PEM-encoded X.509 certificate bundle used by the registry to verify JWTs.
+  # This must contain BEGIN CERTIFICATE, not BEGIN PUBLIC KEY.
+  jwtPublicCertificate: ""
+  # Deprecated alias for jwtPublicCertificate.
   jwtPublicKey: ""
 
 # Registry Configuration
