@@ -13,6 +13,7 @@ export function Hero() {
 
   const commands = [
     "docker build -t aerol.ai/aocr/my-image:main .",
+    "echo \"$AEROL_TOKEN\" | docker login aocr.aerol.ai -u \"$AEROL_USERNAME\" --password-stdin",
     "docker push aerol.ai/aocr/my-image:main",
   ];
 
@@ -38,7 +39,7 @@ export function Hero() {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-accent/30 bg-accent/5 text-sm text-accent mb-8 backdrop-blur-sm">
           <Sparkles className="w-4 h-4" />
-          <span className="font-medium">Authenticated access. Latest-only cleanup.</span>
+          <span className="font-medium">Validated token auth. Hook-verified cleanup.</span>
         </div>
         
         {/* Main heading with gradient */}
@@ -57,9 +58,9 @@ export function Hero() {
         </p>
         
         <p className="text-lg text-muted-foreground/80 max-w-xl mx-auto mb-12 text-pretty">
-          Push standard OCI tags. Securely authenticated for <strong>aerol.ai</strong>.
+          Log in with a validated aerol token, then push standard OCI tags.
           <br className="hidden sm:block" />
-          The reaper keeps only the newest image in each repository.
+          The registry validates your token first, then a signed hook records the push and reaps older images.
         </p>
 
         {/* Terminal */}
@@ -68,7 +69,7 @@ export function Hero() {
             <div className="w-3 h-3 rounded-full bg-red-500/80" />
             <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
             <div className="w-3 h-3 rounded-full bg-green-500/80" />
-            <span className="ml-2 text-xs text-muted-foreground font-mono">~ two commands. that&apos;s it.</span>
+            <span className="ml-2 text-xs text-muted-foreground font-mono">~ build. login. push.</span>
           </div>
           <div className="p-6 font-mono text-sm space-y-3">
             {commands.map((cmd, i) => (
@@ -89,7 +90,7 @@ export function Hero() {
               </div>
             ))}
             <div className="pt-3 border-t border-border/30 text-muted-foreground text-xs">
-              <span className="text-accent/70">#</span> Push with normal tags. Older images are cleaned up automatically.
+              <span className="text-accent/70">#</span> `/v2/token` validates your token first. The registry then signs its hook call before cleanup runs.
             </div>
           </div>
         </div>

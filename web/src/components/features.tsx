@@ -6,7 +6,7 @@ const features = [
   {
     icon: Shield,
     title: "Authenticated Access",
-    description: "Docker token auth sits in front of every push and pull so repository access is controlled from day one.",
+    description: "Validated registry tokens sit in front of every push and pull, and signed hooks keep post-push metadata updates trusted.",
     gradient: "from-green-500 to-emerald-500",
   },
   {

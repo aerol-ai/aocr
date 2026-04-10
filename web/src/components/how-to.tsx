@@ -6,8 +6,9 @@ import { Check, Copy, Terminal } from "lucide-react";
 const examples = [
   {
     title: "Docker Image",
-    description: "Push a normal image tag to the registry",
+    description: "Authenticate once, then push or pull a normal image tag",
     commands: [
+      "echo \"$AEROL_TOKEN\" | docker login aerol.ai -u \"$AEROL_USERNAME\" --password-stdin",
       "docker build -t aerol.ai/aocr/my-app:main .",
       "docker push aerol.ai/aocr/my-app:main",
       "docker pull aerol.ai/aocr/my-app:main",
@@ -15,8 +16,9 @@ const examples = [
   },
   {
     title: "Helm Chart",
-    description: "Push OCI Helm charts without custom tag syntax",
+    description: "Authenticate first, then push OCI Helm charts",
     commands: [
+      "echo \"$AEROL_TOKEN\" | helm registry login aerol.ai -u \"$AEROL_USERNAME\" --password-stdin",
       "helm package ./my-chart",
       "helm push my-chart-0.1.0.tgz oci://aerol.ai/charts",
       "helm install my-release oci://aerol.ai/charts/my-chart --version 0.1.0",
@@ -24,8 +26,10 @@ const examples = [
   },
   {
     title: "GitHub Actions",
-    description: "Build and push standard tags in CI",
+    description: "Validate a token in CI before pushing standard tags",
     commands: [
+      "- name: Log in to aerol registry",
+      "  run: echo \"${{ secrets.AEROL_TOKEN }}\" | docker login aerol.ai -u \"${{ secrets.AEROL_USERNAME }}\" --password-stdin",
       "- name: Build and push",
       "  run: |",
       "    docker build -t aerol.ai/aocr/my-app:${{ github.sha }} .",
@@ -64,11 +68,9 @@ export function HowTo() {
             </span>
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Use standard OCI tags. The cleanup happens in the background.
+            Authenticate with a validated token, then use standard OCI tags.
             <br />
-            <span className="text-accent font-mono">:main</span> <span className="text-muted-foreground/70">|</span>{" "}
-            <span className="text-accent font-mono">:stable</span> <span className="text-muted-foreground/70">|</span>{" "}
-            <span className="text-accent font-mono">:sha-abc123</span>
+            The registry hook keeps metadata in sync and cleans up older tags after each push.
           </p>
         </div>
 
