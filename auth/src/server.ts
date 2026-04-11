@@ -264,7 +264,11 @@ app.get('/v2/token', async (req, res) => {
     }
 
     const kid = computeLibtrustKeyId(JWT_PRIVATE_KEY);
+    console.log('[token] computed kid:', kid);
+    console.log('[token] signing for sub:', userProfile.externalId, 'aud:', typeof service === 'string' && service ? service : DEFAULT_REGISTRY_SERVICE);
     const signedToken = jwt.sign(payload, JWT_PRIVATE_KEY, { algorithm: 'RS256', keyid: kid });
+    const [headerB64] = signedToken.split('.');
+    console.log('[token] JWT header:', Buffer.from(headerB64, 'base64url').toString());
 
     res.json({
       token: signedToken,
@@ -273,11 +277,21 @@ app.get('/v2/token', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Validation error:', err);
+    console.error('[token] error:', err);
     res.status(401).json({ error: 'Invalid token' });
   }
 });
 
 app.listen(port, () => {
   console.log(`Auth service listening at http://localhost:${port}`);
+  if (JWT_PRIVATE_KEY) {
+    try {
+      const kid = computeLibtrustKeyId(JWT_PRIVATE_KEY);
+      console.log('[startup] libtrust kid from private key:', kid);
+    } catch (e) {
+      console.error('[startup] failed to compute kid from private key:', e);
+    }
+  } else {
+    console.error('[startup] JWT_PRIVATE_KEY is not set');
+  }
 });
