@@ -2,6 +2,32 @@ import express from 'express';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
+import crypto from 'crypto';
+
+function computeLibtrustKeyId(privateKeyPem: string): string {
+  const privateKey = crypto.createPrivateKey(privateKeyPem);
+  const publicKey = crypto.createPublicKey(privateKey);
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+  const hash = crypto.createHash('sha256').update(spkiDer).digest();
+  const truncated = hash.slice(0, 30);
+
+  const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let result = '';
+  let bits = 0;
+  let value = 0;
+  for (let i = 0; i < truncated.length; i++) {
+    value = (value << 8) | truncated[i];
+    bits += 8;
+    while (bits >= 5) {
+      result += base32chars[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    result += base32chars[(value << (5 - bits)) & 31];
+  }
+  return (result.match(/.{1,4}/g) || []).join(':');
+}
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -237,7 +263,8 @@ app.get('/v2/token', async (req, res) => {
       throw new Error('JWT_PRIVATE_KEY not configured');
     }
 
-    const signedToken = jwt.sign(payload, JWT_PRIVATE_KEY, { algorithm: 'RS256' });
+    const kid = computeLibtrustKeyId(JWT_PRIVATE_KEY);
+    const signedToken = jwt.sign(payload, JWT_PRIVATE_KEY, { algorithm: 'RS256', keyid: kid });
 
     res.json({
       token: signedToken,
