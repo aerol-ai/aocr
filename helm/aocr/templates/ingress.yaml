@@ -19,7 +19,21 @@ spec:
   - host: {{ .Values.global.domain }}
     http:
       paths:
+      - path: /v2/token
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-auth
+            port:
+              number: {{ .Values.auth.port }}
       - path: /v2/
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-registry
+            port:
+              number: {{ .Values.registry.port }}
+      - path: /v2
         pathType: Prefix
         backend:
           service:

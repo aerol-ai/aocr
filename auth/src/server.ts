@@ -142,7 +142,8 @@ app.get('/v2/token', async (req, res) => {
 
     // 1. Validate token with the upstream auth-info endpoint
     const response = await axios.get(getValidationInfoUrl(), {
-      headers: { Authorization: `Bearer ${validationToken}` }
+      headers: { Authorization: `Bearer ${validationToken}` },
+      timeout: 10000,
     });
 
     const userProfile = normalizeValidationProfile(response.data);
