@@ -26,9 +26,9 @@ kind: Service
 metadata:
   name: {{ include "aocr.fullname" . }}-web
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
-  - port: 80
+  - port: {{ .Values.web.port }}
     targetPort: {{ .Values.web.port }}
   selector:
     app.kubernetes.io/name: {{ include "aocr.name" . }}-web
