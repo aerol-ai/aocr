@@ -65,3 +65,13 @@ reaper:
 # Web Frontend
 web:
   port: 3000
+
+# Ingress
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: aocr-tls

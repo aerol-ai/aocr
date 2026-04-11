@@ -1,0 +1,50 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "aocr.fullname" . }}-ingress
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ .Values.global.domain }}
+    secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.global.domain }}
+    http:
+      paths:
+      - path: /v2/token
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-auth
+            port:
+              number: {{ .Values.auth.port }}
+      - path: /v2/
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-registry
+            port:
+              number: {{ .Values.registry.port }}
+      - path: /v2
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-registry
+            port:
+              number: {{ .Values.registry.port }}
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-web
+            port:
+              number: {{ .Values.web.port }}
+{{- end }}
