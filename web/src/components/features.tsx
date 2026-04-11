@@ -7,37 +7,37 @@ const features = [
     icon: Shield,
     title: "Authenticated Access",
     description: "Users log in with their app username or email plus a validated token, and internal signed hooks keep post-push metadata updates trusted.",
-    gradient: "from-green-500 to-emerald-500",
+    gradient: "from-slate-400 to-slate-500",
   },
   {
     icon: Clock,
     title: "Latest-only Cleanup",
     description: "The reaper keeps the newest image for each repository and removes the older ones automatically.",
-    gradient: "from-blue-500 to-cyan-500",
+    gradient: "from-sky-600 to-blue-700",
   },
   {
     icon: Zap,
     title: "Blazing Fast",
     description: "A small service surface with registry notifications keeps image publishing and cleanup straightforward.",
-    gradient: "from-yellow-500 to-orange-500",
+    gradient: "from-slate-500 to-zinc-600",
   },
   {
     icon: Globe,
     title: "OCI Compatible",
     description: "Works with Docker, Helm, and other OCI-native tooling. Standard tags in, standard pulls out.",
-    gradient: "from-purple-500 to-pink-500",
+    gradient: "from-blue-500 to-indigo-600",
   },
   {
     icon: Lock,
     title: "S3-backed Storage",
     description: "Manifests and blobs live in S3-compatible storage while PostgreSQL keeps the metadata model clean.",
-    gradient: "from-red-500 to-rose-500",
+    gradient: "from-slate-600 to-slate-700",
   },
   {
     icon: Workflow,
     title: "CI/CD Native",
     description: "The repository now ships with GitHub Actions for build, GHCR publish, and SSH deployment to your server.",
-    gradient: "from-indigo-500 to-violet-500",
+    gradient: "from-indigo-500 to-blue-600",
   },
 ];
 
