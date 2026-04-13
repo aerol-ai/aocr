@@ -23,7 +23,7 @@
     "source-map-support": "^0.5.10",
     "ts-express-decorators": "^5.14.1",
     "ts-log-debug": "^5.1.0",
-    "yargs": "^13.2.2"
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
