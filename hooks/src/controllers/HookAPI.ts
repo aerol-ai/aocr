@@ -119,14 +119,20 @@ export class HookAPI {
         const pushedAt = new Date();
         const retention = parseTagRetention(tag, pushedAt);
 
-        // Redis (legacy/cache)
+        // Redis is a best-effort cache for the legacy /v1/images path; Postgres
+        // is the source of truth. A transient Redis blip (SocketClosedUnexpectedly,
+        // ECONNRESET, etc.) must NOT fail the webhook — registry/config.yml has
+        // threshold=10 + 1s backoff, so a rethrow here causes the registry to
+        // retry the entire batch repeatedly, doing duplicate Postgres work and
+        // immediate reaps every time Redis is degraded. Log + record the metric
+        // and keep going; the Postgres upsert below is the one that matters.
         const redisStartedAt = process.hrtime.bigint();
         try {
           await cachePushedImage(imageWithTag, pushedAt);
           recordRedisCache("success", elapsedSecondsSince(redisStartedAt));
         } catch (err) {
           recordRedisCache("error", elapsedSecondsSince(redisStartedAt));
-          throw err;
+          console.warn(`hook: redis cache write failed for ${imageWithTag} — continuing (Postgres remains the source of truth):`, err);
         }
 
         // Postgres metadata store
