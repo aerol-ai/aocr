@@ -96,10 +96,15 @@ The bundled alert rules focus on the new auth and hooks service metrics:
 
 ## Local Development
 
-With Docker Compose, the relevant metrics endpoints are:
+With Docker Compose and `METRICS_ENABLED=true`, the auth and hooks metrics endpoints are:
 
 - `http://localhost:8080/metrics` for auth
 - `http://localhost:8000/metrics` for hooks
-- `http://localhost:5001/metrics` for registry
 
-Those endpoints only return metrics when `METRICS_ENABLED=true`.
+The registry debug listener is not published to the host by default. To expose `http://localhost:5001/metrics` for the registry as well, start Compose with the metrics override:
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.metrics.yaml up
+```
+
+All of those endpoints only return metrics when `METRICS_ENABLED=true`.

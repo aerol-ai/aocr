@@ -162,6 +162,12 @@ metrics:
 - `hooks`: `/metrics` on port `8000`
 - `registry`: `/metrics` on debug port `5001`
 
+For Docker Compose, the registry debug port is no longer published by default. If you want local host access to `http://localhost:5001/metrics`, run Compose with the metrics override file:
+
+```bash
+METRICS_ENABLED=true docker compose -f docker-compose.yaml -f docker-compose.metrics.yaml up
+```
+
 When metrics are enabled, the auth, hooks, and registry pods and services are annotated with `prometheus.io/scrape`, `prometheus.io/path`, and `prometheus.io/port`.
 
 If you use the Prometheus Operator, you can also enable ServiceMonitor resources:

@@ -35,7 +35,8 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
     ports:
       - "5000:5000"
-      - "5001:5001"
+    expose:
+      - "5001"
     depends_on:
       - minio
       - hooks
