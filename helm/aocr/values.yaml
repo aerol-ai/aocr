@@ -138,6 +138,10 @@ mirror:
     repository: ""  # defaults to image.repository
     tag: ""         # defaults to image.tag
   writerImage: "registry:2.8.3"
+  # Image used by the writer-htpasswd init container. Distribution's registry
+  # image doesn't ship htpasswd, so we use the official Apache image (which
+  # bundles it) just to materialise the bcrypt-hashed credential file.
+  htpasswdImage: "httpd:2.4-alpine"
   resources: {}
   # Cluster CIDR allow-list annotation name. Set for non-Traefik ingress
   # controllers (e.g. nginx uses `nginx.ingress.kubernetes.io/whitelist-source-range`).

@@ -27,7 +27,7 @@ spec:
       # Generate the writer-sidecar htpasswd file from the secret-injected
       # username/password so the Distribution container can boot.
       - name: writer-htpasswd
-        image: {{ .Values.mirror.writerImage | quote }}
+        image: {{ .Values.mirror.htpasswdImage | quote }}
         command: ["/bin/sh", "-c"]
         args:
         - |
