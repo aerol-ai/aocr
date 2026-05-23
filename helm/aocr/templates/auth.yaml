@@ -36,6 +36,11 @@ spec:
               key: postgres-password
         - name: VALIDATION_SERVICE_URL
           value: {{ .Values.auth.validationServiceUrl | quote }}
+        - name: AUTH_PAT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: auth-pat-token
         - name: JWT_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
