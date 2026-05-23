@@ -2,7 +2,7 @@ import * as util from "util";
 import { Server } from "../server/server";
 import { logger } from "../logger";
 
-exports.name = "hooks";
+exports.command = "hooks";
 exports.describe = "Start and run the hook api server";
 exports.builder = {
 

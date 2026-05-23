@@ -6,7 +6,7 @@ import { getConfiguredRepositoryIds, reapObsoleteImages } from "../util/imageRet
 const reaperSchedule = process.env["REAPER_SCHEDULE"] || "* * * * *";
 const runOnce = ["1", "true", "yes"].indexOf((process.env["REAPER_RUN_ONCE"] || "").toLowerCase()) >= 0;
 
-exports.name = "reap";
+exports.command = "reap";
 exports.describe = "remove older images and keep the latest image per repository";
 exports.builder = {
 
