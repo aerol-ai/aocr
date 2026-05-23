@@ -18,7 +18,7 @@ redis/data/
 # Secrets & Keys
 secrets/
 *secrets*.yml
-*secrets*.yml.example
+# *secrets*.yml.example
 *.pem
 *.crt
 *.key

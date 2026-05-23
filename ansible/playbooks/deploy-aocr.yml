@@ -93,6 +93,17 @@
         - "{{ aocr_jwt_private_key_path }}"
         - "{{ aocr_jwt_public_certificate_path }}"
 
+    - name: Authenticate Helm to ghcr.io using PAT
+      ansible.builtin.command:
+        cmd: "helm registry login ghcr.io -u {{ aocr_github_username }} -p {{ aocr_github_pat }}"
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      when: 
+        - aocr_github_pat is defined 
+        - aocr_github_pat != ''
+        - aocr_github_pat != 'YOUR_GITHUB_PAT'
+      changed_when: false
+
     - name: Run Helm Upgrade on the VM
       ansible.builtin.command:
         cmd: >
