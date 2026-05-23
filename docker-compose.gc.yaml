@@ -1,0 +1,23 @@
+services:
+  registry-gc:
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-registry:${IMAGE_TAG:-latest}
+    build:
+      context: registry
+      dockerfile: Dockerfile
+    container_name: aocr-registry-gc
+    env_file: ".env"
+    environment:
+      - PORT=5000
+      - REPLREG_HOST=${REPLREG_HOST:-aerol.ai}
+      - REPLREG_SECRET=${REPLREG_SECRET:-placeholder}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_BUCKET=${S3_BUCKET:-aocr}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://minio:9000}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      - DRY_RUN=${DRY_RUN:-true}
+    depends_on:
+      - minio
+    networks:
+      - aocr-network
+    command: ["/garbage-collect.sh"]

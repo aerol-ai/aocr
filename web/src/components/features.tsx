@@ -11,8 +11,8 @@ const features = [
   },
   {
     icon: Clock,
-    title: "Latest-only Cleanup",
-    description: "The reaper keeps the newest image for each repository and removes the older ones automatically.",
+    title: "Policy-Based Retention",
+    description: "Supports keep-latest, age-based TTL, and pull-activity idle tracking.",
     gradient: "from-sky-600 to-blue-700",
   },
   {

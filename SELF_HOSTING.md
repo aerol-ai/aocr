@@ -149,6 +149,43 @@ Notes:
 - `VALIDATION_SERVICE_URL` should point to the upstream auth-info endpoint that accepts `Authorization: Bearer <your-token>` and returns user identity details.
 - End users do not call `VALIDATION_SERVICE_URL` directly. They log in to the registry with the token your application gave them.
 
+## Retention Policies
+
+Retention is tag-driven and supports age-based and pull-activity-based expiry.
+
+Examples:
+
+```bash
+docker push registry.example.com/aocr/my-image:main
+docker push registry.example.com/aocr/my-image:main--ttl-7d
+docker push registry.example.com/aocr/my-image:main--idle-30d
+```
+
+Behavior:
+
+- plain tags like `main` continue to use latest-only cleanup
+- `--ttl-*` tags remain available until their age-based TTL expires
+- `--idle-*` tags remain available as long as they are pulled within the specified duration
+- supported suffixes are documented in [RETENTION.md](./RETENTION.md)
+
+## Storage Reclamation (Garbage Collection)
+
+When the Reaper deletes tags based on policies, the underlying storage blobs remain. To physically reclaim S3 storage space, enable the Registry GC cronjob in your `values.yaml`:
+
+```yaml
+registryGc:
+  enabled: true
+  dryRun: false
+  schedule: "0 3 * * *"
+  requireReadOnly: true
+```
+This runs the official `registry garbage-collect` command during low-traffic windows.
+
+Upgrade note:
+
+- New installs pick up the updated schema automatically.
+- Existing installs should run [db/migrate-retention-policies.sql](./db/migrate-retention-policies.sql) before deploying the updated hooks and reaper images.
+
 ## Metrics
 
 The chart now exposes scrapeable metrics for the pull-path services:

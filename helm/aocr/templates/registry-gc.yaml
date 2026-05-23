@@ -1,0 +1,75 @@
+{{- if .Values.registryGc.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "aocr.fullname" . }}-registry-gc
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.registryGc.schedule }}"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: registry-gc
+            image: "{{ .Values.image.repository }}/aocr-registry:{{ .Values.image.tag }}"
+            imagePullPolicy: {{ .Values.image.pullPolicy }}
+            command: ["/garbage-collect.sh"]
+            env:
+            - name: DRY_RUN
+              value: {{ .Values.registryGc.dryRun | quote }}
+            - name: PORT
+              value: "{{ .Values.registry.port }}"
+            - name: METRICS_ENABLED
+              value: {{ .Values.metrics.enabled | quote }}
+            - name: REPLREG_HOST
+              value: "{{ .Values.global.domain }}"
+            - name: REPLREG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aocr.fullname" . }}-secrets
+                  key: replreg-secret
+            - name: S3_REGION
+              value: {{ .Values.registry.s3.region | quote }}
+            - name: S3_BUCKET
+              value: {{ .Values.registry.s3.bucket | quote }}
+            - name: S3_ENDPOINT
+              value: {{ .Values.registry.s3.endpoint | quote }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aocr.fullname" . }}-secrets
+                  key: s3-access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aocr.fullname" . }}-secrets
+                  key: s3-secret-key
+            - name: HOOK_URI
+              value: "http://{{ include "aocr.fullname" . }}-hooks:8000/v1/hook/registry-event"
+            - name: HOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aocr.fullname" . }}-secrets
+                  key: hook-token
+            volumeMounts:
+            - name: config
+              mountPath: /etc/docker/registry/config.yml
+              subPath: config.yml
+            - name: auth-crt
+              mountPath: /etc/docker/registry/auth.crt
+              subPath: auth.crt
+          volumes:
+          - name: config
+            configMap:
+              name: {{ include "aocr.fullname" . }}-registry-config
+          - name: auth-crt
+            secret:
+              secretName: {{ include "aocr.fullname" . }}-secrets
+              items:
+              - key: jwt-public-cert
+                path: auth.crt
+          restartPolicy: OnFailure
+{{- end }}
