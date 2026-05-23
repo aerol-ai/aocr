@@ -36,6 +36,7 @@ auth:
   jwtPublicKey: ""
   pat:
     token: ""
+    tokens: []
 
 # Registry Configuration
 registry:

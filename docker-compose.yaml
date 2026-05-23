@@ -122,6 +122,7 @@ services:
       - VALIDATION_SERVICE_URL=${VALIDATION_SERVICE_URL}
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
       - AUTH_PAT_TOKEN=${AUTH_PAT_TOKEN:-}
+      - AUTH_PAT_TOKENS=${AUTH_PAT_TOKENS:-}
     ports:
       - "8080:8080"
     depends_on:

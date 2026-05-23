@@ -40,8 +40,8 @@ The auth service supports two validation modes:
   - The auth service calls your upstream `/api/auth/info` endpoint and uses its response as the user profile.
 
 2. Static PAT validation.
-  - Configure `auth.pat.token`.
-  - The auth service compares the presented Docker password against that configured PAT locally and skips the upstream API call when it matches.
+  - Configure `auth.pat.token` for one PAT, or `auth.pat.tokens` for multiple PATs.
+  - The auth service compares the presented Docker password against the configured PAT set locally and skips the upstream API call when it matches.
   - The static PAT path uses an internal fixed subject and skips auth-time Postgres sync.
   - The presented Docker username is ignored in this mode.
 
@@ -87,12 +87,13 @@ Required values and what they do:
 - `auth.validationServiceUrl`: upstream auth-info endpoint that validates user tokens.
 - `auth.jwtPrivateKey`: private key used by the auth service to sign Docker registry bearer tokens.
 - `auth.jwtPublicCertificate`: PEM-encoded X.509 certificate bundle mounted into the registry so it can verify the JWTs signed by `auth.jwtPrivateKey`.
-- `auth.pat.token`: the static PAT value matched against the presented Docker password.
+- `auth.pat.token`: a single static PAT value matched against the presented Docker password.
+- `auth.pat.tokens`: multiple static PAT values, each treated as a local fast-path match.
 
 Important:
 - `auth.jwtPublicCertificate` must contain `-----BEGIN CERTIFICATE-----`, not `-----BEGIN PUBLIC KEY-----`.
 - `auth.jwtPublicKey` remains as a deprecated compatibility alias, but if you use it, it still has to contain a certificate bundle, not a raw public key.
-- If you want PAT-only mode, set `auth.pat.token` and leave `auth.validationServiceUrl` empty.
+- If you want PAT-only mode, set `auth.pat.token` or `auth.pat.tokens` and leave `auth.validationServiceUrl` empty.
 - If you want mixed mode, configure both `auth.pat.*` and `auth.validationServiceUrl`; PAT matches stay local and all other tokens fall back to the API.
 
 Why the JWT key pair exists:

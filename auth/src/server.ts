@@ -56,6 +56,7 @@ const pool = new Pool({
 
 const VALIDATION_SERVICE_URL = process.env.VALIDATION_SERVICE_URL;
 const AUTH_PAT_TOKEN = process.env.AUTH_PAT_TOKEN;
+const AUTH_PAT_TOKENS = process.env.AUTH_PAT_TOKENS;
 const JWT_PRIVATE_KEY = process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n');
 const ISSUER = 'aocr-auth';
 const DEFAULT_REGISTRY_SERVICE = process.env.REGISTRY_SERVICE || 'aocr';
@@ -75,7 +76,7 @@ interface ValidationUserProfile {
 }
 
 interface StaticPatConfig {
-  token: string;
+  tokens: string[];
   userProfile: ValidationUserProfile;
 }
 
@@ -84,8 +85,30 @@ interface ValidationResult {
   userProfile: ValidationUserProfile;
 }
 
+function parseStaticPatTokens(...rawValues: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+
+  for (const rawValue of rawValues) {
+    if (!rawValue) {
+      continue;
+    }
+
+    for (const token of rawValue.split(/[\n,]/)) {
+      const trimmedToken = token.trim();
+      if (!trimmedToken || seen.has(trimmedToken)) {
+        continue;
+      }
+
+      seen.add(trimmedToken);
+    }
+  }
+
+  return Array.from(seen);
+}
+
 function getStaticPatConfig(): StaticPatConfig | null {
-  if (!AUTH_PAT_TOKEN) {
+  const tokens = parseStaticPatTokens(AUTH_PAT_TOKEN, AUTH_PAT_TOKENS);
+  if (tokens.length === 0) {
     return null;
   }
 
@@ -106,7 +129,7 @@ function getStaticPatConfig(): StaticPatConfig | null {
   };
 
   return {
-    token: AUTH_PAT_TOKEN,
+    tokens,
     userProfile,
   };
 }
@@ -196,14 +219,16 @@ function validateUsingStaticPat(validationToken: string): ValidationResult | nul
     return null;
   }
 
-  if (!tokensMatch(STATIC_PAT_CONFIG.token, validationToken)) {
-    return null;
+  for (const configuredToken of STATIC_PAT_CONFIG.tokens) {
+    if (tokensMatch(configuredToken, validationToken)) {
+      return {
+        strategy: 'pat',
+        userProfile: STATIC_PAT_CONFIG.userProfile,
+      };
+    }
   }
 
-  return {
-    strategy: 'pat',
-    userProfile: STATIC_PAT_CONFIG.userProfile,
-  };
+  return null;
 }
 
 async function validateUsingApi(validationToken: string): Promise<ValidationResult> {
