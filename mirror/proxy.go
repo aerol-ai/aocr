@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -84,6 +87,25 @@ func (p *Proxy) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleManifest serves the requested manifest and warms the writer cache
+// with everything it depends on, so a subsequent pull is fully served from
+// S3 and the `push` notification fires (which is what populates hooks'
+// /v1/images list).
+//
+// Distribution validates referential integrity on manifest PUT: an image
+// manifest is rejected (MANIFEST_BLOB_UNKNOWN) until its config + layer
+// blobs exist in the same repo. Pushing the manifest before its layers
+// therefore silently fails and leaves _manifests/ empty in S3 — exactly the
+// bug that produced the original "blobs cached but no row in /v1/images"
+// symptom. The fix is to warm dependencies first:
+//
+//   - Image manifest (schemaV2 / OCI image manifest): warm config + layers
+//     synchronously, then PUT, then serve. The client's wall time is
+//     unchanged — the blob fetches that follow become cache hits.
+//   - Index / manifest list: serve immediately, warm children + PUT the
+//     index in the background. Indexes can fan out to 16+ per-arch
+//     manifests; blocking the client on a full server-side fetch of every
+//     architecture is the wrong default for a pull-through cache.
 func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, res Resolved) {
 	ctx := r.Context()
 
@@ -102,9 +124,27 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, res Resol
 		return
 	}
 
-	if err := p.writer.PutManifest(ctx, res.Storage, res.Reference, upstreamCT, body); err != nil {
-		p.metrics.RecordWriterError(res.Upstream.Slug())
-		// Cache write failed; still serve the response so the client makes progress.
+	parsed, parseErr := parseManifestDescriptors(body, upstreamCT)
+	if parseErr != nil {
+		log.Printf("mirror: cannot parse manifest for %s/%s ref=%s ct=%q: %v — cache skipped",
+			res.Upstream.Slug(), res.Repository, res.Reference, upstreamCT, parseErr)
+	}
+
+	switch {
+	case parseErr != nil:
+		// Unknown schema: don't try to warm anything we don't understand.
+		// The manifest body is still served to the client below.
+	case parsed.isIndex:
+		bodyCopy := append([]byte(nil), body...)
+		warmRes := res
+		warmCT := upstreamCT
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			p.warmAndPutManifest(bgCtx, warmRes, bodyCopy, warmCT, parsed)
+		}()
+	default:
+		p.warmAndPutManifest(ctx, res, body, upstreamCT, parsed)
 	}
 
 	w.Header().Set("Content-Type", upstreamCT)
@@ -119,6 +159,197 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, res Resol
 	}
 	n, _ := w.Write(body)
 	p.metrics.AddBytesServed(res.Upstream.Slug(), int64(n))
+}
+
+// warmAndPutManifest ensures every dependency the manifest references is in
+// the writer cache, then PUTs the manifest itself. Errors are logged + metric
+// only; callers don't need to react.
+func (p *Proxy) warmAndPutManifest(ctx context.Context, res Resolved, body []byte, contentType string, parsed parsedManifest) {
+	if parsed.isIndex {
+		if err := p.warmIndexChildren(ctx, res, parsed.manifests); err != nil {
+			log.Printf("mirror: index child warm failed for %s/%s ref=%s: %v",
+				res.Upstream.Slug(), res.Repository, res.Reference, err)
+			p.metrics.RecordWriterError(res.Upstream.Slug())
+			// Skip the index PUT — Distribution will reject it without all
+			// children present anyway. Better to leave the cache consistent.
+			return
+		}
+	} else {
+		descs := make([]descriptor, 0, len(parsed.layers)+1)
+		if parsed.config.Digest != "" {
+			descs = append(descs, parsed.config)
+		}
+		descs = append(descs, parsed.layers...)
+		if err := p.warmBlobs(ctx, res, descs); err != nil {
+			log.Printf("mirror: blob warm failed for %s/%s ref=%s: %v",
+				res.Upstream.Slug(), res.Repository, res.Reference, err)
+			p.metrics.RecordWriterError(res.Upstream.Slug())
+			return
+		}
+	}
+
+	if err := p.writer.PutManifest(ctx, res.Storage, res.Reference, contentType, body); err != nil {
+		log.Printf("mirror: manifest PUT failed for %s/%s ref=%s: %v",
+			res.Upstream.Slug(), res.Repository, res.Reference, err)
+		p.metrics.RecordWriterError(res.Upstream.Slug())
+	}
+}
+
+// warmIndexChildren fetches every per-arch manifest referenced by an index
+// and recursively warms it (config + layers + PUT). Distribution accepts the
+// parent index PUT only after each child is on disk. Children are fetched
+// concurrently with a small fan-out cap so a 16-arch index doesn't fire 16
+// simultaneous upstream connections.
+func (p *Proxy) warmIndexChildren(ctx context.Context, res Resolved, children []descriptor) error {
+	const fanOut = 4
+	sem := make(chan struct{}, fanOut)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+
+	for _, child := range children {
+		child := child
+		if child.Digest == "" {
+			continue
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			childRes := res
+			childRes.Reference = child.Digest
+
+			if _, _, present, _ := p.writer.HeadManifest(ctx, childRes.Storage, childRes.Reference); present {
+				return
+			}
+			childBody, _, childCT, err := p.fetchManifestFromUpstream(ctx, childRes, "")
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("fetch child %s: %w", child.Digest, err)
+				}
+				mu.Unlock()
+				return
+			}
+			parsedChild, perr := parseManifestDescriptors(childBody, childCT)
+			if perr != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("parse child %s: %w", child.Digest, perr)
+				}
+				mu.Unlock()
+				return
+			}
+			p.warmAndPutManifest(ctx, childRes, childBody, childCT, parsedChild)
+		}()
+	}
+	wg.Wait()
+	return firstErr
+}
+
+// warmBlobs ensures every blob in descs is present in the writer cache,
+// fetching missing ones directly from upstream. Bounded concurrency for the
+// same reason as warmIndexChildren.
+func (p *Proxy) warmBlobs(ctx context.Context, res Resolved, descs []descriptor) error {
+	const fanOut = 4
+	sem := make(chan struct{}, fanOut)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+
+	for _, d := range descs {
+		d := d
+		if d.Digest == "" {
+			continue
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			if _, present, _ := p.writer.HeadBlob(ctx, res.Storage, d.Digest); present {
+				return
+			}
+			blobRes := res
+			blobRes.Reference = d.Digest
+			if err := p.uploadBlobFromUpstream(ctx, blobRes); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("upload blob %s: %w", d.Digest, err)
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return firstErr
+}
+
+// uploadBlobFromUpstream streams a blob straight from upstream into the
+// writer cache, without involving a client. Used by the warm path when the
+// client hasn't (yet) asked for the blob itself.
+func (p *Proxy) uploadBlobFromUpstream(ctx context.Context, res Resolved) error {
+	resp, err := p.openUpstreamBlob(ctx, res)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("upstream blob %s returned %d: %s", res.Reference, resp.StatusCode, string(msg))
+	}
+	size := resp.ContentLength
+	if size <= 0 {
+		return fmt.Errorf("upstream blob %s lacked Content-Length", res.Reference)
+	}
+	return p.writer.UploadBlob(ctx, res.Storage, res.Reference, size, resp.Body)
+}
+
+// descriptor is the subset of OCI/Docker descriptor fields the warm path
+// needs. We deliberately ignore platform, urls, annotations etc.
+type descriptor struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int64  `json:"size"`
+}
+
+type parsedManifest struct {
+	isIndex   bool
+	manifests []descriptor // index children
+	config    descriptor   // image manifest config blob
+	layers    []descriptor // image manifest layer blobs
+}
+
+func parseManifestDescriptors(body []byte, contentType string) (parsedManifest, error) {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "manifest.list") || strings.Contains(ct, "image.index") {
+		var idx struct {
+			Manifests []descriptor `json:"manifests"`
+		}
+		if err := json.Unmarshal(body, &idx); err != nil {
+			return parsedManifest{}, err
+		}
+		return parsedManifest{isIndex: true, manifests: idx.Manifests}, nil
+	}
+	var img struct {
+		Config descriptor   `json:"config"`
+		Layers []descriptor `json:"layers"`
+	}
+	if err := json.Unmarshal(body, &img); err != nil {
+		return parsedManifest{}, err
+	}
+	return parsedManifest{config: img.Config, layers: img.Layers}, nil
 }
 
 func (p *Proxy) streamManifestFromWriter(w http.ResponseWriter, r *http.Request, res Resolved, digest, contentType string) {
@@ -231,6 +462,8 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, res Resolved)
 	p.metrics.AddBytesServed(res.Upstream.Slug(), n)
 
 	if copyErr != nil || closeErr != nil || uploadErr != nil || tee.cacheBroken {
+		log.Printf("mirror: blob cache write degraded for %s/%s digest=%s copyErr=%v closeErr=%v uploadErr=%v cacheBroken=%v",
+			res.Upstream.Slug(), res.Repository, res.Reference, copyErr, closeErr, uploadErr, tee.cacheBroken)
 		p.metrics.RecordWriterError(res.Upstream.Slug())
 	}
 }
