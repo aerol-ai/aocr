@@ -13,16 +13,25 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks
+      {{- if .Values.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "{{ .Values.hooks.port }}"
+      {{- end }}
     spec:
       containers:
       - name: hooks
         image: "{{ .Values.image.repository }}/aocr-hooks:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
-        - containerPort: {{ .Values.hooks.port }}
+        - name: http
+          containerPort: {{ .Values.hooks.port }}
         env:
         - name: PORT
           value: "{{ .Values.hooks.port }}"
+        - name: METRICS_ENABLED
+          value: {{ .Values.metrics.enabled | quote }}
         - name: HOOK_TOKEN
           valueFrom:
             secretKeyRef:
@@ -57,10 +66,20 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "aocr.fullname" . }}-hooks
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks
+  {{- if .Values.metrics.enabled }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ .Values.hooks.port }}"
+  {{- end }}
 spec:
   type: ClusterIP
   ports:
-  - port: 8000
+  - name: http
+    port: 8000
     targetPort: {{ .Values.hooks.port }}
   selector:
     app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks

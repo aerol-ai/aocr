@@ -1,0 +1,90 @@
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "aocr.fullname" . }}-metrics
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: aocr-auth.rules
+      rules:
+        - alert: AOCRAuthHighTokenIssuanceErrorRate
+          expr: |
+            (
+              sum(rate(aocr_auth_token_issuance_total{outcome="error"}[5m]))
+              /
+              clamp_min(sum(rate(aocr_auth_token_issuance_total[5m])), 0.001)
+            ) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            service: auth
+          annotations:
+            summary: Auth token issuance error rate is high
+            description: More than 5% of auth token issuance attempts have failed over the last 10 minutes.
+        - alert: AOCRAuthHighP95TokenLatency
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(aocr_auth_http_request_duration_seconds_bucket{route="/v2/token"}[5m])
+              )
+            ) > 1
+          for: 10m
+          labels:
+            severity: warning
+            service: auth
+          annotations:
+            summary: Auth token endpoint latency is high
+            description: The p95 latency for /v2/token has been above 1 second for the last 10 minutes.
+        - alert: AOCRAuthPostgresPoolBackpressure
+          expr: |
+            max(aocr_auth_postgres_pool_connections{state="waiting"}) > 5
+          for: 10m
+          labels:
+            severity: warning
+            service: auth
+          annotations:
+            summary: Auth Postgres pool has waiting clients
+            description: The auth service Postgres pool has had more than 5 waiting clients for the last 10 minutes.
+    - name: aocr-hooks.rules
+      rules:
+        - alert: AOCRHooksHighWebhookErrorRate
+          expr: |
+            (
+              sum(rate(aocr_hooks_http_requests_total{route="/v1/hook/registry-event",status_code=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(aocr_hooks_http_requests_total{route="/v1/hook/registry-event"}[5m])), 0.001)
+            ) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            service: hooks
+          annotations:
+            summary: Hooks webhook error rate is high
+            description: More than 5% of registry webhook requests have returned 5xx responses over the last 10 minutes.
+        - alert: AOCRHooksImmediateReapErrors
+          expr: |
+            sum(rate(aocr_hooks_immediate_reap_duration_seconds_count{outcome="error"}[10m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: hooks
+          annotations:
+            summary: Hooks immediate reaping is failing
+            description: The hooks service has recorded immediate reaping errors for at least 10 minutes.
+        - alert: AOCRHooksPostgresPoolBackpressure
+          expr: |
+            max(aocr_hooks_postgres_pool_connections{state="waiting"}) > 5
+          for: 10m
+          labels:
+            severity: warning
+            service: hooks
+          annotations:
+            summary: Hooks Postgres pool has waiting clients
+            description: The hooks service Postgres pool has had more than 5 waiting clients for the last 10 minutes.
+{{- end }}

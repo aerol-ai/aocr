@@ -3,6 +3,16 @@ import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import crypto from 'crypto';
+import {
+  bindMetricsPool,
+  elapsedSecondsSince,
+  mountMetrics,
+  recordDatabaseSync,
+  recordTokenIssuance,
+  recordTokenValidation,
+  recordUpstreamValidation,
+  setConfiguredPatCount,
+} from './metrics';
 
 function computeLibtrustKeyId(privateKeyPem: string): string {
   const privateKey = crypto.createPrivateKey(privateKeyPem);
@@ -53,13 +63,19 @@ function getDatabaseConnectionString(): string {
 const pool = new Pool({
   connectionString: getDatabaseConnectionString(),
 });
+bindMetricsPool(pool);
 
 const VALIDATION_SERVICE_URL = process.env.VALIDATION_SERVICE_URL;
+const AUTH_PAT_TOKEN = process.env.AUTH_PAT_TOKEN;
+const AUTH_PAT_TOKENS = process.env.AUTH_PAT_TOKENS;
 const JWT_PRIVATE_KEY = process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n');
 const ISSUER = 'aocr-auth';
 const DEFAULT_REGISTRY_SERVICE = process.env.REGISTRY_SERVICE || 'aocr';
+const STATIC_PAT_SUBJECT = 'static-pat';
+const STATIC_PAT_PROVIDER = 'static-pat';
 
 app.use(express.json());
+mountMetrics(app);
 
 interface ValidationUserProfile {
   externalId: string;
@@ -70,6 +86,68 @@ interface ValidationUserProfile {
   authProvider: string | null;
   rawProfile: Record<string, unknown>;
 }
+
+interface StaticPatConfig {
+  tokens: string[];
+  userProfile: ValidationUserProfile;
+}
+
+interface ValidationResult {
+  strategy: 'api' | 'pat';
+  userProfile: ValidationUserProfile;
+}
+
+function parseStaticPatTokens(...rawValues: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+
+  for (const rawValue of rawValues) {
+    if (!rawValue) {
+      continue;
+    }
+
+    for (const token of rawValue.split(/[\n,]/)) {
+      const trimmedToken = token.trim();
+      if (!trimmedToken || seen.has(trimmedToken)) {
+        continue;
+      }
+
+      seen.add(trimmedToken);
+    }
+  }
+
+  return Array.from(seen);
+}
+
+function getStaticPatConfig(): StaticPatConfig | null {
+  const tokens = parseStaticPatTokens(AUTH_PAT_TOKEN, AUTH_PAT_TOKENS);
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  const userProfile: ValidationUserProfile = {
+    externalId: STATIC_PAT_SUBJECT,
+    username: null,
+    email: null,
+    displayName: STATIC_PAT_SUBJECT,
+    avatarUrl: null,
+    authProvider: STATIC_PAT_PROVIDER,
+    rawProfile: {
+      source: 'static-pat',
+      user: {
+        id: STATIC_PAT_SUBJECT,
+      },
+      authProvider: STATIC_PAT_PROVIDER,
+    },
+  };
+
+  return {
+    tokens,
+    userProfile,
+  };
+}
+
+const STATIC_PAT_CONFIG = getStaticPatConfig();
+setConfiguredPatCount(STATIC_PAT_CONFIG?.tokens.length || 0);
 
 function getValidationInfoUrl(): string {
   if (!VALIDATION_SERVICE_URL) {
@@ -138,6 +216,87 @@ function normalizeValidationProfile(payload: any): ValidationUserProfile {
   };
 }
 
+function tokensMatch(expectedToken: string, presentedToken: string): boolean {
+  const expected = Buffer.from(expectedToken, 'utf8');
+  const presented = Buffer.from(presentedToken, 'utf8');
+
+  if (expected.length !== presented.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expected, presented);
+}
+
+function validateUsingStaticPat(validationToken: string): ValidationResult | null {
+  if (!STATIC_PAT_CONFIG) {
+    return null;
+  }
+
+  for (const configuredToken of STATIC_PAT_CONFIG.tokens) {
+    if (tokensMatch(configuredToken, validationToken)) {
+      return {
+        strategy: 'pat',
+        userProfile: STATIC_PAT_CONFIG.userProfile,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function validateUsingApi(validationToken: string): Promise<ValidationResult> {
+  const startedAt = process.hrtime.bigint();
+
+  try {
+    const response = await axios.get(getValidationInfoUrl(), {
+      headers: { Authorization: `Bearer ${validationToken}` },
+      timeout: 10000,
+    });
+
+    recordUpstreamValidation('success', elapsedSecondsSince(startedAt));
+
+    return {
+      strategy: 'api',
+      userProfile: normalizeValidationProfile(response.data),
+    };
+  } catch (error) {
+    recordUpstreamValidation('error', elapsedSecondsSince(startedAt));
+    throw error;
+  }
+}
+
+async function validatePresentedToken(validationToken: string): Promise<ValidationResult> {
+  if (STATIC_PAT_CONFIG) {
+    const startedAt = process.hrtime.bigint();
+    const staticPatResult = validateUsingStaticPat(validationToken);
+    if (staticPatResult) {
+      recordTokenValidation('pat', 'success', elapsedSecondsSince(startedAt));
+      return staticPatResult;
+    }
+
+    recordTokenValidation('pat', 'miss', elapsedSecondsSince(startedAt));
+  }
+
+  if (VALIDATION_SERVICE_URL) {
+    const startedAt = process.hrtime.bigint();
+
+    try {
+      const validationResult = await validateUsingApi(validationToken);
+      recordTokenValidation('api', 'success', elapsedSecondsSince(startedAt));
+      return validationResult;
+    } catch (error) {
+      recordTokenValidation('api', 'error', elapsedSecondsSince(startedAt));
+      throw error;
+    }
+  }
+
+  if (STATIC_PAT_CONFIG) {
+    throw new Error('Invalid static PAT token');
+  }
+
+  throw new Error('No validation method configured');
+}
+
 function presentedIdentityMatchesUser(presentedIdentity: string | null, account: unknown, userProfile: ValidationUserProfile): boolean {
   const identitiesToCheck = [presentedIdentity, typeof account === 'string' ? account : null]
     .filter((identity): identity is string => identity != null && identity.trim() !== '')
@@ -162,73 +321,76 @@ function presentedIdentityMatchesUser(presentedIdentity: string | null, account:
 app.get('/v2/token', async (req, res) => {
   const { account, service, scope } = req.query;
   const authHeader = req.headers.authorization;
+  let validationStrategy: 'api' | 'pat' | 'unknown' = 'unknown';
 
   try {
     const { validationToken, presentedIdentity } = extractPresentedCredentials(authHeader);
 
-    // 1. Validate token with the upstream auth-info endpoint
-    const response = await axios.get(getValidationInfoUrl(), {
-      headers: { Authorization: `Bearer ${validationToken}` },
-      timeout: 10000,
-    });
-
-    const userProfile = normalizeValidationProfile(response.data);
-    if (!presentedIdentityMatchesUser(presentedIdentity, account, userProfile)) {
+    // 1. Validate with the static PAT fast-path first, then fall back to the API validator.
+    const validationResult = await validatePresentedToken(validationToken);
+    validationStrategy = validationResult.strategy;
+    const userProfile = validationResult.userProfile;
+    if (validationResult.strategy === 'api' && !presentedIdentityMatchesUser(presentedIdentity, account, userProfile)) {
       return res.status(401).json({ error: 'Presented registry identity does not match validated user' });
     }
 
     // 2. Sync user and repository metadata in Postgres
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      
-      // Update/Insert user
-      const userRes = await client.query(
-        `INSERT INTO users (external_id, username, email, display_name, avatar_url, auth_provider, profile)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-         ON CONFLICT (external_id) DO UPDATE SET
-           username = EXCLUDED.username,
-           email = EXCLUDED.email,
-           display_name = EXCLUDED.display_name,
-           avatar_url = EXCLUDED.avatar_url,
-           auth_provider = EXCLUDED.auth_provider,
-           profile = EXCLUDED.profile
-         RETURNING id`,
-        [
-          userProfile.externalId,
-          userProfile.username,
-          userProfile.email,
-          userProfile.displayName,
-          userProfile.avatarUrl,
-          userProfile.authProvider,
-          JSON.stringify(userProfile.rawProfile),
-        ]
-      );
-      const userId = userRes.rows[0].id;
+    if (validationResult.strategy === 'api') {
+      const dbSyncStartedAt = process.hrtime.bigint();
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      // Handle scope (repository and permissions)
-      // scope=repository:org/repo:pull,push
-      if (scope) {
-        const [type, name, actions] = (scope as string).split(':');
-        if (type === 'repository') {
-          const [org, repo] = name.split('/');
-          if (org && repo) {
-            await client.query(
-              `INSERT INTO repositories (organization, name, user_id)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (organization, name) DO UPDATE SET user_id = EXCLUDED.user_id`,
-              [org, repo, userId]
-            );
+        // Update/Insert user
+        const userRes = await client.query(
+          `INSERT INTO users (external_id, username, email, display_name, avatar_url, auth_provider, profile)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+           ON CONFLICT (external_id) DO UPDATE SET
+             username = EXCLUDED.username,
+             email = EXCLUDED.email,
+             display_name = EXCLUDED.display_name,
+             avatar_url = EXCLUDED.avatar_url,
+             auth_provider = EXCLUDED.auth_provider,
+             profile = EXCLUDED.profile
+           RETURNING id`,
+          [
+            userProfile.externalId,
+            userProfile.username,
+            userProfile.email,
+            userProfile.displayName,
+            userProfile.avatarUrl,
+            userProfile.authProvider,
+            JSON.stringify(userProfile.rawProfile),
+          ]
+        );
+        const userId = userRes.rows[0].id;
+
+        // Handle scope (repository and permissions)
+        // scope=repository:org/repo:pull,push
+        if (scope) {
+          const [type, name] = (scope as string).split(':');
+          if (type === 'repository') {
+            const [org, repo] = name.split('/');
+            if (org && repo) {
+              await client.query(
+                `INSERT INTO repositories (organization, name, user_id)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (organization, name) DO UPDATE SET user_id = EXCLUDED.user_id`,
+                [org, repo, userId]
+              );
+            }
           }
         }
-      }
 
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('Database sync error:', err);
-    } finally {
-      client.release();
+        await client.query('COMMIT');
+        recordDatabaseSync('success', elapsedSecondsSince(dbSyncStartedAt));
+      } catch (err) {
+        await client.query('ROLLBACK');
+        recordDatabaseSync('error', elapsedSecondsSince(dbSyncStartedAt));
+        console.error('Database sync error:', err);
+      } finally {
+        client.release();
+      }
     }
 
     // 3. Issue Docker-compatible JWT
@@ -265,6 +427,7 @@ app.get('/v2/token', async (req, res) => {
 
     const kid = computeLibtrustKeyId(JWT_PRIVATE_KEY);
     console.log('[token] computed kid:', kid);
+  console.log('[token] validated with strategy:', validationResult.strategy);
     console.log('[token] signing for sub:', userProfile.externalId, 'aud:', typeof service === 'string' && service ? service : DEFAULT_REGISTRY_SERVICE);
     const signedToken = jwt.sign(payload, JWT_PRIVATE_KEY, { algorithm: 'RS256', keyid: kid });
     const [headerB64] = signedToken.split('.');
@@ -275,8 +438,10 @@ app.get('/v2/token', async (req, res) => {
       expires_in: 3600,
       issued_at: new Date().toISOString()
     });
+    recordTokenIssuance(validationStrategy, 'success');
 
   } catch (err) {
+    recordTokenIssuance(validationStrategy, 'error');
     console.error('[token] error:', err);
     res.status(401).json({ error: 'Invalid token' });
   }

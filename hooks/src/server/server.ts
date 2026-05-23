@@ -4,6 +4,7 @@ import {ServerLoader, ServerSettings} from "ts-express-decorators";
 import {$log} from "ts-log-debug";
 import Path = require("path");
 import * as bodyParser from "body-parser";
+import { mountMetrics } from "../metrics";
 
 let port = process.env.PORT;
 if (port == null || port == "") {
@@ -40,6 +41,7 @@ export class Server extends ServerLoader {
     }));
 
     this.use(cors());
+    mountMetrics(this.expressApp);
 
     if (process.env["NODE_ENV"] === "production") {
       $log.level = "OFF";

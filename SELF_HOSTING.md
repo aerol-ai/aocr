@@ -31,6 +31,26 @@ The webhook secret is separate:
 - `hooks.token` is not an end-user credential.
 - It is only used internally when the registry sends push notifications to the hooks service.
 
+## Auth Validation Modes
+
+The auth service supports two validation modes:
+
+1. API validation.
+  - Configure `auth.validationServiceUrl`.
+  - The auth service calls your upstream `/api/auth/info` endpoint and uses its response as the user profile.
+
+2. Static PAT validation.
+  - Configure `auth.pat.token` for one PAT, or `auth.pat.tokens` for multiple PATs.
+  - The auth service compares the presented Docker password against the configured PAT set locally and skips the upstream API call when it matches.
+  - The static PAT path uses an internal fixed subject and skips auth-time Postgres sync.
+  - The presented Docker username is ignored in this mode.
+
+If you configure both modes, the auth service uses this order:
+
+1. Check whether the presented token matches the configured static PAT.
+2. If it matches, validate locally.
+3. If it does not match, fall back to `auth.validationServiceUrl`.
+
 ## Kubernetes With Helm
 
 Example install:
@@ -67,10 +87,14 @@ Required values and what they do:
 - `auth.validationServiceUrl`: upstream auth-info endpoint that validates user tokens.
 - `auth.jwtPrivateKey`: private key used by the auth service to sign Docker registry bearer tokens.
 - `auth.jwtPublicCertificate`: PEM-encoded X.509 certificate bundle mounted into the registry so it can verify the JWTs signed by `auth.jwtPrivateKey`.
+- `auth.pat.token`: a single static PAT value matched against the presented Docker password.
+- `auth.pat.tokens`: multiple static PAT values, each treated as a local fast-path match.
 
 Important:
 - `auth.jwtPublicCertificate` must contain `-----BEGIN CERTIFICATE-----`, not `-----BEGIN PUBLIC KEY-----`.
 - `auth.jwtPublicKey` remains as a deprecated compatibility alias, but if you use it, it still has to contain a certificate bundle, not a raw public key.
+- If you want PAT-only mode, set `auth.pat.token` or `auth.pat.tokens` and leave `auth.validationServiceUrl` empty.
+- If you want mixed mode, configure both `auth.pat.*` and `auth.validationServiceUrl`; PAT matches stay local and all other tokens fall back to the API.
 
 Why the JWT key pair exists:
 - The auth service issues the bearer token that Docker or Helm uses after login.
@@ -125,7 +149,51 @@ Notes:
 - `VALIDATION_SERVICE_URL` should point to the upstream auth-info endpoint that accepts `Authorization: Bearer <your-token>` and returns user identity details.
 - End users do not call `VALIDATION_SERVICE_URL` directly. They log in to the registry with the token your application gave them.
 
+## Metrics
+
+The chart now exposes scrapeable metrics for the pull-path services:
+
+```yaml
+metrics:
+  enabled: true
+```
+
+- `auth`: `/metrics` on port `8080`
+- `hooks`: `/metrics` on port `8000`
+- `registry`: `/metrics` on debug port `5001`
+
+For Docker Compose, the registry debug port is no longer published by default. If you want local host access to `http://localhost:5001/metrics`, run Compose with the metrics override file:
+
+```bash
+METRICS_ENABLED=true docker compose -f docker-compose.yaml -f docker-compose.metrics.yaml up
+```
+
+When metrics are enabled, the auth, hooks, and registry pods and services are annotated with `prometheus.io/scrape`, `prometheus.io/path`, and `prometheus.io/port`.
+
+If you use the Prometheus Operator, you can also enable ServiceMonitor resources:
+
+```yaml
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+```
+
+You can also enable bundled Prometheus alert rules for the auth and hooks metrics:
+
+```yaml
+metrics:
+  enabled: true
+  prometheusRule:
+    enabled: true
+```
+
+An importable Grafana dashboard is available at [deploy/grafana/aocr-observability-dashboard.json](./deploy/grafana/aocr-observability-dashboard.json).
+
+For the full metrics matrix and the key metric names per service, see [OBSERVABILITY.md](./OBSERVABILITY.md).
+
 ## Related Docs
 
 - [README.md](./README.md) for hosted `aocr.aerol.ai` usage
+- [OBSERVABILITY.md](./OBSERVABILITY.md) for metrics endpoints and metric coverage
 - [understanding.md](./understanding.md) for architecture and push lifecycle

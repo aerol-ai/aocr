@@ -37,6 +37,7 @@ if [ "$NEEDS_RENDER" = "true" ]; then
         -e "s|__PORT__|$(escape_sed_replacement "${PORT}")|g" \
         -e "s|__HOOK_TOKEN__|$(escape_sed_replacement "${HOOK_TOKEN}")|g" \
         -e "s|__HOOK_URI__|$(escape_sed_replacement "${HOOK_URI}")|g" \
+        -e "s|__METRICS_ENABLED__|$(escape_sed_replacement "${METRICS_ENABLED:-false}")|g" \
         -e "s|__REPLREG_HOST__|$(escape_sed_replacement "${REPLREG_HOST}")|g" \
         -e "s|__REPLREG_SECRET__|$(escape_sed_replacement "${REPLREG_SECRET}")|g" \
         -e "s|__S3_REGION__|$(escape_sed_replacement "${S3_REGION}")|g" \

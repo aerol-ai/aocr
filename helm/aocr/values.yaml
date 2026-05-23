@@ -34,6 +34,20 @@ auth:
   jwtPublicCertificate: ""
   # Deprecated alias for jwtPublicCertificate.
   jwtPublicKey: ""
+  pat:
+    token: ""
+    tokens: []
+
+metrics:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
 
 # Registry Configuration
 registry:
