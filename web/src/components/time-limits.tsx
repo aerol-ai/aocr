@@ -14,6 +14,14 @@ export function TimeLimits() {
   return (
     <section className="relative py-32 px-4">
       <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl md:text-5xl font-bold mb-4">
+            Policy-based{" "}
+            <span className="bg-gradient-to-r from-accent to-accent/70 bg-clip-text text-transparent">
+              retention
+            </span>
+          </h2>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Cleanup is automatic and can be scoped to selected repository IDs.
           </p>
         </div>
