@@ -23,7 +23,7 @@ type Upstream interface {
 	Host() string
 
 	// NormalizeRepository takes the per-upstream repository segments parsed
-	// from the request path (after stripping `/v2/` and any `_/<slug>/` prefix)
+	// from the request path (after stripping `/v2/` and any `aocr/<slug>/` prefix)
 	// and returns:
 	//   - upstreamRepo : the repository identifier to use in the upstream URL
 	//     (e.g. "library/redis" for DockerHub, "aerol-ai/foo" for ghcr).

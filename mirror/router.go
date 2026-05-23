@@ -44,7 +44,7 @@ func (r *Registry) Get(slug string) (Upstream, bool) {
 	return u, ok
 }
 
-// ErrUnknownUpstream is returned when an `/v2/_/<slug>/...` request names an
+// ErrUnknownUpstream is returned when an `/v2/aocr/<slug>/...` request names an
 // upstream the proxy does not have registered.
 var ErrUnknownUpstream = errors.New("mirror: unknown upstream")
 
@@ -55,13 +55,19 @@ var ErrNotRegistryRequest = errors.New("mirror: not a registry request")
 // Resolve parses a /v2/... request path and returns the resolved request, or
 // an error describing why the path is not routable. Recognised shapes:
 //
-//	/v2/library/<repo>/manifests/<ref>   -> docker.io library namespace shortcut
-//	/v2/library/<repo>/blobs/<digest>    -> docker.io library namespace shortcut
-//	/v2/_/<slug>/<repo>/manifests/<ref>  -> explicit upstream selection
-//	/v2/_/<slug>/<repo>/blobs/<digest>   -> explicit upstream selection
+//	/v2/library/<repo>/manifests/<ref>      -> docker.io library namespace shortcut
+//	/v2/library/<repo>/blobs/<digest>       -> docker.io library namespace shortcut
+//	/v2/aocr/<slug>/<repo>/manifests/<ref>  -> explicit upstream selection
+//	/v2/aocr/<slug>/<repo>/blobs/<digest>   -> explicit upstream selection
 //
 // Repository segments may themselves contain slashes (e.g. ghcr's
 // `aerol-ai/foo/bar`), and the parser tolerates that.
+//
+// Note: this used to use `_` as the reserved disambiguator segment, but
+// Docker's reference grammar rejects refs like `mirror.aocr.aerol.ai/_/ghcr/...`
+// before the request ever leaves the client (`_` is not a valid component
+// per distribution/reference), so we switched to `aocr` which matches the
+// grammar.
 func Resolve(reg *Registry, path string) (Resolved, error) {
 	if !strings.HasPrefix(path, "/v2/") {
 		return Resolved{}, ErrNotRegistryRequest
@@ -85,7 +91,7 @@ func Resolve(reg *Registry, path string) (Resolved, error) {
 	var slug string
 	var repoSegments []string
 
-	if segments[0] == "_" {
+	if segments[0] == "aocr" {
 		if len(segments) < 3 {
 			return Resolved{}, ErrUnknownUpstream
 		}

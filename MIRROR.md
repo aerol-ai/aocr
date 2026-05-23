@@ -47,14 +47,21 @@ The `mirror/` storage prefix is what makes Phase 0's
 
 ## Day-1 upstreams
 
-| URL path prefix             | Upstream         | Notes                                  |
-| --------------------------- | ---------------- | -------------------------------------- |
-| `/v2/library/<repo>`        | `docker.io`      | DockerHub "library" namespace shortcut |
-| `/v2/<user>/<repo>`         | `docker.io`      | User/org namespaces                    |
-| `/v2/_/ghcr/<org>/<repo>`   | `ghcr.io`        | GitHub Container Registry              |
-| `/v2/_/gcr/<proj>/<repo>`   | `gcr.io`         | Google Container Registry              |
-| `/v2/_/quay/<org>/<repo>`   | `quay.io`        | Red Hat Quay                           |
-| `/v2/_/k8s/<repo>`          | `registry.k8s.io`| Kubernetes community registry          |
+| URL path prefix                | Upstream         | Notes                                  |
+| ------------------------------ | ---------------- | -------------------------------------- |
+| `/v2/library/<repo>`           | `docker.io`      | DockerHub "library" namespace shortcut |
+| `/v2/<user>/<repo>`            | `docker.io`      | User/org namespaces                    |
+| `/v2/aocr/ghcr/<org>/<repo>`   | `ghcr.io`        | GitHub Container Registry              |
+| `/v2/aocr/gcr/<proj>/<repo>`   | `gcr.io`         | Google Container Registry              |
+| `/v2/aocr/quay/<org>/<repo>`   | `quay.io`        | Red Hat Quay                           |
+| `/v2/aocr/k8s/<repo>`          | `registry.k8s.io`| Kubernetes community registry          |
+
+The `aocr/` segment is the reserved disambiguator. Earlier drafts used
+`_/` (the Distribution v2 reserved-namespace convention), but Docker's
+reference grammar (distribution/reference) rejects `_` as a path
+component, so daemons fail with "invalid reference format" before the
+request ever reaches the mirror. `aocr` matches the grammar and doubles
+as a clear "this is AOCR routing" marker.
 
 `*-docker.pkg.dev` and `*.azurecr.io` are on the roadmap but require
 authenticated upstream credentials and will land with Phase 4.
@@ -129,7 +136,7 @@ DockerHub pulls (`docker pull redis`) flow through the mirror
 automatically. For ghcr/gcr/quay/k8s, rewrite the reference:
 
 ```bash
-docker pull mirror.aerol.ai/_/ghcr/aerol-ai/sandbox:v1
+docker pull mirror.aerol.ai/aocr/ghcr/aerol-ai/sandbox:v1
 ```
 
 ### Tune retention

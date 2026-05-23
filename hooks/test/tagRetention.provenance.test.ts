@@ -65,13 +65,13 @@ describe("inferredProvenance", () => {
   });
 
   it("flags mirror/* as mirror and captures upstreamRef as the path tail", () => {
-    const parsed = inferredProvenance("mirror/_/ghcr/aerol-ai/foo");
+    const parsed = inferredProvenance("mirror/aocr/ghcr/aerol-ai/foo");
     assert.deepEqual(parsed, {
       provenance: "mirror",
       organization: "mirror",
-      name: "_/ghcr/aerol-ai/foo",
+      name: "aocr/ghcr/aerol-ai/foo",
       clusterId: null,
-      upstreamRef: "_/ghcr/aerol-ai/foo",
+      upstreamRef: "aocr/ghcr/aerol-ai/foo",
     });
   });
 
