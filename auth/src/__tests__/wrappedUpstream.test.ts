@@ -31,7 +31,9 @@ const SAMPLE_CREDS: UpstreamCredentials = {
   scope: 'repository:_/ghcr/aerol-ai/sandbox:pull',
 };
 const SCOPE = 'repository:_/ghcr/aerol-ai/sandbox:pull';
-const REPO = '_/ghcr/aerol-ai/sandbox';
+// Upstream-side repo after the route helper strips `_/ghcr/`. This is what
+// the proof cache and probes see end-to-end.
+const REPO = 'aerol-ai/sandbox';
 
 class FixedProbe implements UpstreamProbe {
   public calls = 0;
@@ -215,6 +217,58 @@ describe('validateWrappedUpstream rejection', () => {
       (err: unknown) => err instanceof WrappedUpstreamError && err.code === 'unreachable',
     );
     assert.ok(cache.get(seeded.identity, REPO), 'original proof must survive a transient miss');
+  });
+});
+
+describe('validateWrappedUpstream routing', () => {
+  it('rejects when the scope routes to a different host than the envelope', async () => {
+    const ring = freshRing();
+    const cache = new ProofCache();
+    const probe = new FixedProbe({ ok: true, upstreamBearer: 'x' });
+    // Envelope says ghcr.io, but scope says docker.io's library/redis.
+    const mismatchScope = 'repository:library/redis:pull';
+    await assert.rejects(
+      validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), mismatchScope, {
+        keyRing: ring,
+        proofCache: cache,
+        resolveProbe: () => probe,
+      }),
+      (err: unknown) => err instanceof WrappedUpstreamError && err.code === 'route_mismatch',
+    );
+    assert.equal(probe.calls, 0, 'must not probe when routing fails');
+  });
+
+  it('rejects an unknown _/ reserved prefix', async () => {
+    const ring = freshRing();
+    const cache = new ProofCache();
+    const probe = new FixedProbe({ ok: true, upstreamBearer: 'x' });
+    const unknownScope = 'repository:_/unknown/foo/bar:pull';
+    await assert.rejects(
+      validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), unknownScope, {
+        keyRing: ring,
+        proofCache: cache,
+        resolveProbe: () => probe,
+      }),
+      (err: unknown) => err instanceof WrappedUpstreamError && err.code === 'route_mismatch',
+    );
+  });
+
+  it('strips the _/ghcr/ prefix before handing the repo to the probe', async () => {
+    const ring = freshRing();
+    const cache = new ProofCache();
+    let observedRepo = '';
+    const probe = {
+      async probe(_creds: UpstreamCredentials, repo: string) {
+        observedRepo = repo;
+        return { ok: true as const, upstreamBearer: 'x' };
+      },
+    };
+    await validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), SCOPE, {
+      keyRing: ring,
+      proofCache: cache,
+      resolveProbe: () => probe,
+    });
+    assert.equal(observedRepo, 'aerol-ai/sandbox');
   });
 });
 

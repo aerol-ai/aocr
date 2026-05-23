@@ -32,31 +32,29 @@ export interface UpstreamProbe {
   probe(creds: UpstreamCredentials, repoPath: string): Promise<ProbeResult>;
 }
 
-// Stub adapter used in PR 4b. Returns ok with an empty bearer for any
-// upstream, which means: "we accept the wrap envelope as proof of identity
-// but we have not actually contacted the upstream." Acceptable for the
-// infrastructure-only PR because the wrap key is only shared with trusted
-// AerolVM nodes, so an attacker without the wrap key cannot reach this code
-// path. PR 4c replaces this with real per-upstream adapters that perform
-// the token exchange and manifest HEAD described in F17 step 3-4.
-class StubProbe implements UpstreamProbe {
+// Unknown-host probe. Returned when no adapter is registered for the
+// upstream host carried in the wrap envelope. Always rejects with
+// 'unsupported' so the auth service produces a clear error rather than
+// silently accepting an unauthenticated identity.
+class UnsupportedProbe implements UpstreamProbe {
   async probe(_creds: UpstreamCredentials, _repoPath: string): Promise<ProbeResult> {
-    return { ok: true, upstreamBearer: '' };
+    return { ok: false, reason: 'unsupported', detail: 'no adapter registered for this upstream' };
   }
 }
 
-const STUB_PROBE = new StubProbe();
+const UNSUPPORTED_PROBE = new UnsupportedProbe();
 
-// Registry of probes by upstream host. PR 4b: every host resolves to the
-// stub. PR 4c: replaced with real adapters.
+// Registry of probes by upstream host. Populated at module init below with
+// the Day-1 adapters; tests can swap entries via _registerProbeForTest.
 const PROBES: Map<string, UpstreamProbe> = new Map();
 
 export function getProbeForHost(host: string): UpstreamProbe {
-  return PROBES.get(host.toLowerCase()) ?? STUB_PROBE;
+  return PROBES.get(host.toLowerCase()) ?? UNSUPPORTED_PROBE;
 }
 
-// Test-only: register a probe for a host. Production registration happens
-// during module init in PR 4c.
+// Test-only: register a probe for a host. Returns a restore function the
+// test should call in afterEach. Production registration happens at module
+// load via registerDefaultProbes() below.
 export function _registerProbeForTest(host: string, probe: UpstreamProbe): () => void {
   const prev = PROBES.get(host.toLowerCase());
   PROBES.set(host.toLowerCase(), probe);
@@ -65,3 +63,40 @@ export function _registerProbeForTest(host: string, probe: UpstreamProbe): () =>
     else PROBES.delete(host.toLowerCase());
   };
 }
+
+// Day-1 upstream endpoint table. The values are the public token-server +
+// manifest endpoints for each upstream. Kept here (not env-tunable) because
+// changing them is a code-review decision, not an operator decision.
+import { createTokenExchangeAdapter } from './adapters/tokenExchange';
+import { createAnonymousAdapter } from './adapters/anonymous';
+
+function registerDefaultProbes(): void {
+  PROBES.set('docker.io', createTokenExchangeAdapter({
+    tokenEndpoint: 'https://auth.docker.io/token',
+    manifestBase: 'https://registry-1.docker.io',
+    service: 'registry.docker.io',
+  }));
+  PROBES.set('ghcr.io', createTokenExchangeAdapter({
+    tokenEndpoint: 'https://ghcr.io/token',
+    manifestBase: 'https://ghcr.io',
+    service: 'ghcr.io',
+  }));
+  PROBES.set('quay.io', createTokenExchangeAdapter({
+    tokenEndpoint: 'https://quay.io/v2/auth',
+    manifestBase: 'https://quay.io',
+    service: 'quay.io',
+  }));
+  PROBES.set('gcr.io', createTokenExchangeAdapter({
+    // GCR's /v2/token endpoint accepts `_json_key:<json>` Basic-auth and
+    // performs the OAuth2 service-account exchange internally, so the
+    // generic adapter works without a dedicated OAuth2 code path here.
+    tokenEndpoint: 'https://gcr.io/v2/token',
+    manifestBase: 'https://gcr.io',
+    service: 'gcr.io',
+  }));
+  PROBES.set('registry.k8s.io', createAnonymousAdapter({
+    manifestBase: 'https://registry.k8s.io',
+  }));
+}
+
+registerDefaultProbes();
