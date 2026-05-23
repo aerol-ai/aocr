@@ -143,7 +143,7 @@
           {% if aocr_mirror_enabled | default(false) | bool %}
           --set mirror.host="{{ aocr_mirror_host | default('mirror.' + aocr_global_domain) }}"
           --set-string mirror.writerPassword="{{ final_mirror_writer_password }}"
-          --set mirror.allowList="{{ aocr_mirror_allow_list | default('ghcr.io,gcr.io,quay.io,registry.k8s.io,docker.io') }}"
+          --set mirror.allowList="{{ aocr_mirror_allow_list | default('0.0.0.0/0') }}"
           {% endif %}
       environment:
         KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
