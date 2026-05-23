@@ -87,6 +87,24 @@ modes (`null` for `keep-latest`). Cluster PATs and wrapped-upstream
 tokens are not supported on this endpoint and return `403
 unsupported_scope`.
 
+Pagination is server-driven. The response envelope is:
+
+```json
+{
+  "limit": 100,
+  "offset": 0,
+  "count": 100,
+  "has_more": true,
+  "next_offset": 100,
+  "images": [ ... ]
+}
+```
+
+Default `limit` is `100`, hard cap `1000`. `has_more` is computed
+cheaply by asking Postgres for one row past the page boundary, so
+paging through a large registry never falls back to a `COUNT(*)`. Walk
+the pages with `?offset=<next_offset>` until `has_more` is `false`.
+
 ## Deploy Your Own
 
 If you want to run your own aocr instance:

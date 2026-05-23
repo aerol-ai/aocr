@@ -6,11 +6,43 @@ import {
   buildUserListQuery,
   clampLimit,
   clampOffset,
+  listAllImages,
+  listImagesForExternalId,
   parseLimit,
   parseOffset,
   DEFAULT_LIMIT,
   MAX_LIMIT,
 } from '../imageList';
+
+type QueryCall = { text: string; values: unknown[] };
+
+function fakePool(rowCount: number) {
+  const calls: QueryCall[] = [];
+  const rows = Array.from({ length: rowCount }, (_, i) => ({
+    repository: `org/repo-${i}`,
+    tag: `v${i}`,
+    manifest_digest: `sha256:${i}`,
+    provenance: 'pushed',
+    upstream_ref: null,
+    cluster_id: null,
+    source_sandbox_id: null,
+    retention_mode: 'keep-latest',
+    retention_value_seconds: null,
+    raw_retention_suffix: null,
+    last_pushed_at: null,
+    last_pulled_at: null,
+    expires_at: null,
+  }));
+  return {
+    calls,
+    pool: {
+      query: async (text: string, values: unknown[]) => {
+        calls.push({ text, values });
+        return { rows };
+      },
+    } as any,
+  };
+}
 
 describe('buildAdminListQuery', () => {
   it('does not include a user filter', () => {
@@ -116,5 +148,45 @@ describe('parseLimit / parseOffset', () => {
 
   it('parseOffset accepts a valid value', () => {
     assert.equal(parseOffset('42'), 42);
+  });
+});
+
+describe('listAllImages has_more', () => {
+  it('queries LIMIT limit+1 and reports hasMore=false when the DB returns fewer than limit+1 rows', async () => {
+    const { pool, calls } = fakePool(50);
+    const page = await listAllImages(pool, 100, 0);
+    assert.equal(page.hasMore, false);
+    assert.equal(page.rows.length, 50);
+    assert.deepEqual(calls[0].values, [101, 0]);
+  });
+
+  it('drops the overflow row and reports hasMore=true when the DB returns limit+1 rows', async () => {
+    const { pool, calls } = fakePool(101);
+    const page = await listAllImages(pool, 100, 0);
+    assert.equal(page.hasMore, true);
+    assert.equal(page.rows.length, 100);
+    assert.deepEqual(calls[0].values, [101, 0]);
+  });
+
+  it('reports hasMore=false when the DB returns exactly limit rows (boundary)', async () => {
+    const { pool } = fakePool(100);
+    const page = await listAllImages(pool, 100, 0);
+    assert.equal(page.hasMore, false);
+    assert.equal(page.rows.length, 100);
+  });
+});
+
+describe('listImagesForExternalId has_more', () => {
+  it('binds external_id as $1 and limit+1 as $2', async () => {
+    const { pool, calls } = fakePool(5);
+    await listImagesForExternalId(pool, 'ext-42', 10, 0);
+    assert.deepEqual(calls[0].values, ['ext-42', 11, 0]);
+  });
+
+  it('drops the overflow row and reports hasMore=true', async () => {
+    const { pool } = fakePool(11);
+    const page = await listImagesForExternalId(pool, 'ext-42', 10, 0);
+    assert.equal(page.hasMore, true);
+    assert.equal(page.rows.length, 10);
   });
 });
