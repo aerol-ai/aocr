@@ -128,7 +128,7 @@ export function elapsedSecondsSince(startNs: bigint): number {
   return Number(process.hrtime.bigint() - startNs) / 1_000_000_000;
 }
 
-export function recordTokenValidation(strategy: 'api' | 'pat' | 'cluster-pat', outcome: string, durationSeconds: number): void {
+export function recordTokenValidation(strategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream', outcome: string, durationSeconds: number): void {
   if (!metricsEnabled) {
     return;
   }
@@ -153,7 +153,7 @@ export function recordDatabaseSync(outcome: string, durationSeconds: number): vo
   databaseSyncDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
-export function recordTokenIssuance(strategy: 'api' | 'pat' | 'cluster-pat' | 'unknown', outcome: string): void {
+export function recordTokenIssuance(strategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream' | 'unknown', outcome: string): void {
   if (!metricsEnabled) {
     return;
   }

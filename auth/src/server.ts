@@ -8,6 +8,13 @@ import {
   evaluateClusterPatScope,
   parseClusterPatEntries,
 } from './clusterPat';
+import { WrapKeyRing, parseWrapKeyRing } from './upstreamAuth/wrap';
+import { ProofCache } from './upstreamAuth/proofCache';
+import {
+  WRAPPED_UPSTREAM_TOKEN_TTL_SECONDS,
+  isWrappedUpstreamToken,
+  validateWrappedUpstream,
+} from './upstreamAuth/strategy';
 import {
   bindMetricsPool,
   elapsedSecondsSince,
@@ -81,6 +88,7 @@ const DEFAULT_REGISTRY_SERVICE = process.env.REGISTRY_SERVICE || 'aocr';
 const STATIC_PAT_SUBJECT = 'static-pat';
 const STATIC_PAT_PROVIDER = 'static-pat';
 const CLUSTER_PAT_PROVIDER = 'cluster-pat';
+const WRAPPED_UPSTREAM_PROVIDER = 'wrapped-upstream';
 
 app.use(express.json());
 mountMetrics(app);
@@ -105,9 +113,13 @@ interface ClusterPatConfig {
 }
 
 interface ValidationResult {
-  strategy: 'api' | 'pat' | 'cluster-pat';
+  strategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream';
   userProfile: ValidationUserProfile;
   clusterId?: string;
+  // Present only when strategy === 'wrapped-upstream'. Identifies the
+  // upstream creds without exposing them — used as the JWT sub and for
+  // metrics correlation. The auth service NEVER logs the cleartext creds.
+  credIdentity?: string;
 }
 
 function parseStaticPatTokens(...rawValues: Array<string | undefined>): string[] {
@@ -174,6 +186,14 @@ function getClusterPatConfig(): ClusterPatConfig | null {
 const CLUSTER_PAT_CONFIG = getClusterPatConfig();
 setConfiguredClusterPatCount(CLUSTER_PAT_CONFIG?.entries.length || 0);
 
+// F19 / F18: wrap key ring + proof cache. Both are absent (effectively
+// disabled) when UPSTREAM_AUTH_WRAP_KEYS is empty or unset; the auth
+// service then rejects any aocrwrap:* token with a clear error rather than
+// silently falling through to the API validator (which would 401 anyway,
+// but with a misleading reason).
+const UPSTREAM_AUTH_WRAP_KEY_RING: WrapKeyRing = parseWrapKeyRing(process.env.UPSTREAM_AUTH_WRAP_KEYS);
+const UPSTREAM_PROOF_CACHE = new ProofCache();
+
 function buildClusterPatProfile(clusterId: string): ValidationUserProfile {
   const subject = `cluster:${clusterId}`;
   return {
@@ -189,6 +209,41 @@ function buildClusterPatProfile(clusterId: string): ValidationUserProfile {
       authProvider: CLUSTER_PAT_PROVIDER,
       clusterId,
     },
+  };
+}
+
+function buildWrappedUpstreamProfile(identity: string): ValidationUserProfile {
+  // Short, log-safe identifier — never the full sha256, and never the host
+  // or username from the envelope. The full identity stays inside the proof
+  // cache only.
+  const subject = `wrapped:${identity.slice(0, 16)}`;
+  return {
+    externalId: subject,
+    username: null,
+    email: null,
+    displayName: subject,
+    avatarUrl: null,
+    authProvider: WRAPPED_UPSTREAM_PROVIDER,
+    rawProfile: {
+      source: WRAPPED_UPSTREAM_PROVIDER,
+      user: { id: subject },
+      authProvider: WRAPPED_UPSTREAM_PROVIDER,
+    },
+  };
+}
+
+async function validateUsingWrappedUpstream(
+  presentedToken: string,
+  scope: unknown,
+): Promise<ValidationResult> {
+  const outcome = await validateWrappedUpstream(presentedToken, scope, {
+    keyRing: UPSTREAM_AUTH_WRAP_KEY_RING,
+    proofCache: UPSTREAM_PROOF_CACHE,
+  });
+  return {
+    strategy: 'wrapped-upstream',
+    userProfile: buildWrappedUpstreamProfile(outcome.identity),
+    credIdentity: outcome.identity,
   };
 }
 
@@ -326,7 +381,19 @@ async function validateUsingApi(validationToken: string): Promise<ValidationResu
   }
 }
 
-async function validatePresentedToken(validationToken: string): Promise<ValidationResult> {
+async function validatePresentedToken(validationToken: string, scope: unknown): Promise<ValidationResult> {
+  if (isWrappedUpstreamToken(validationToken)) {
+    const startedAt = process.hrtime.bigint();
+    try {
+      const wrappedResult = await validateUsingWrappedUpstream(validationToken, scope);
+      recordTokenValidation('wrapped-upstream', 'success', elapsedSecondsSince(startedAt));
+      return wrappedResult;
+    } catch (error) {
+      recordTokenValidation('wrapped-upstream', 'error', elapsedSecondsSince(startedAt));
+      throw error;
+    }
+  }
+
   if (STATIC_PAT_CONFIG) {
     const startedAt = process.hrtime.bigint();
     const staticPatResult = validateUsingStaticPat(validationToken);
@@ -393,13 +460,13 @@ function presentedIdentityMatchesUser(presentedIdentity: string | null, account:
 app.get('/v2/token', async (req, res) => {
   const { account, service, scope } = req.query;
   const authHeader = req.headers.authorization;
-  let validationStrategy: 'api' | 'pat' | 'cluster-pat' | 'unknown' = 'unknown';
+  let validationStrategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream' | 'unknown' = 'unknown';
 
   try {
     const { validationToken, presentedIdentity } = extractPresentedCredentials(authHeader);
 
     // 1. Validate with the static PAT fast-path first, then fall back to the API validator.
-    const validationResult = await validatePresentedToken(validationToken);
+    const validationResult = await validatePresentedToken(validationToken, scope);
     validationStrategy = validationResult.strategy;
     const userProfile = validationResult.userProfile;
     if (validationResult.strategy === 'api' && !presentedIdentityMatchesUser(presentedIdentity, account, userProfile)) {
@@ -493,12 +560,15 @@ app.get('/v2/token', async (req, res) => {
       });
     }
 
+    const ttlSeconds = validationResult.strategy === 'wrapped-upstream'
+      ? WRAPPED_UPSTREAM_TOKEN_TTL_SECONDS
+      : 3600;
     const payload = {
       iss: ISSUER,
       sub: userProfile.externalId,
       aud: typeof service === 'string' && service ? service : DEFAULT_REGISTRY_SERVICE,
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      exp: Math.floor(Date.now() / 1000) + ttlSeconds,
       access,
       context: {
         external_id: userProfile.externalId,
@@ -524,7 +594,7 @@ app.get('/v2/token', async (req, res) => {
 
     res.json({
       token: signedToken,
-      expires_in: 3600,
+      expires_in: ttlSeconds,
       issued_at: new Date().toISOString()
     });
     recordTokenIssuance(validationStrategy, 'success');

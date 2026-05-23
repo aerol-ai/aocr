@@ -65,6 +65,11 @@ spec:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: jwt-private-key
+        - name: UPSTREAM_AUTH_WRAP_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: upstream-auth-wrap-keys
 ---
 apiVersion: v1
 kind: Service
