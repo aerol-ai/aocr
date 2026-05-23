@@ -12,7 +12,7 @@ export function Footer() {
               <span className="text-2xl font-bold font-mono">aocr (aerol.ai)</span>
             </div>
             <p className="text-muted-foreground text-sm">
-              Authenticated OCI registry with latest-only cleanup.
+              Authenticated OCI registry with policy-based retention.
             </p>
           </div>
 

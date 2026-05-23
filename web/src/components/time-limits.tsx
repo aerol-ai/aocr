@@ -1,9 +1,12 @@
 "use client";
 
+import { Clock } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 const cleanupRules = [
-  { value: "1 image", title: "Latest kept", description: "Per repository" },
-  { value: "cron", title: "Cleanup loop", description: "Configurable schedule" },
-  { value: "UUID", title: "Scoped runs", description: "Optional repository IDs" },
+  { value: "1 image", title: "Keep Latest", description: "Default for plain tags" },
+  { value: "--ttl-*", title: "Age TTL", description: "Expires by time since push" },
+  { value: "--idle-*", title: "Idle TTL", description: "Expires by inactivity" },
   { value: "OCI", title: "Standard tags", description: "No TTL suffixes" },
 ];
 
@@ -11,16 +14,6 @@ export function TimeLimits() {
   return (
     <section className="relative py-32 px-4">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Latest-only{" "}
-            <span className="bg-gradient-to-r from-accent to-accent/70 bg-clip-text text-transparent">
-              retention
-            </span>
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Repositories keep the newest image and clean up the rest.
-            <br />
             Cleanup is automatic and can be scoped to selected repository IDs.
           </p>
         </div>

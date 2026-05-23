@@ -1,29 +1,24 @@
-# Retention
+# Retention Policies and Garbage Collection
 
-`aocr` supports two retention behaviors today:
+`aocr` supports policy-based retention for Docker image tags. Instead of relying on external scripts to clean up your registry, aocr has a built-in Reaper that enforces retention policies directly.
 
-- plain tags use latest-only cleanup
-- tags with supported `--ttl-*` suffixes expire by age
+## Retention Modes
 
-## Tag Syntax
+aocr supports three primary retention behaviors:
 
-The proposed `~~` syntax is not valid Docker tag syntax. Use legal OCI tag suffixes instead.
+1. **Keep Latest (Default)**
+2. **Age TTL (`--ttl-*`)**
+3. **Idle TTL (`--idle-*`)**
 
-Examples:
+### 1. Keep Latest
+If a tag does not have a special retention suffix (e.g., `my-image:main`), aocr automatically defaults to a `keep-latest` policy. 
+Within a given repository, aocr will only keep the newest pushed tag that does not have a special retention suffix. All older plain tags will be reaped.
 
-```bash
-docker push registry.example.com/aocr/my-image:main
-docker push registry.example.com/aocr/my-image:main--ttl-1h
-docker push registry.example.com/aocr/my-image:main--ttl-7d
-docker push registry.example.com/aocr/my-image:main--ttl-1month
-```
+### 2. Age TTL
+Tags appended with an `--ttl-*` suffix are kept for a specific duration measured from the time they were pushed. 
+For example, `my-image:main--ttl-7d` will be preserved for exactly 7 days after it is pushed, and then the Reaper will delete it.
 
-The full suffixed tag is the real tag. Pulls must use the same full tag.
-
-## Supported TTL Suffixes
-
-Canonical suffixes:
-
+Supported Age TTL suffixes:
 - `--ttl-1h`
 - `--ttl-6h`
 - `--ttl-24h`
@@ -33,26 +28,29 @@ Canonical suffixes:
 - `--ttl-180d`
 - `--ttl-365d`
 
-Accepted aliases:
+Aliases: `--ttl-1month`, `--ttl-3month`, `--ttl-6month`, `--ttl-12month`
 
-- `--ttl-1month` maps to `30d`
-- `--ttl-3month` maps to `90d`
-- `--ttl-6month` maps to `180d`
-- `--ttl-12month` maps to `365d`
+### 3. Idle TTL
+Tags appended with an `--idle-*` suffix are kept as long as they are actively being pulled. 
+For example, `my-image:main--idle-30d` will be preserved as long as it has been pulled at least once in the last 30 days. If 30 days pass with zero pulls, the Reaper will delete it.
 
-## Current Behavior
+Supported Idle TTL suffixes:
+- `--idle-7d`
+- `--idle-30d`
+- `--idle-90d`
+- `--idle-180d`
 
-- plain tags like `main` continue to use latest-only cleanup
-- `--ttl-*` tags are stored with an `expires_at` timestamp derived from push time
-- repushing the same full TTL tag refreshes `last_pushed_at` and `expires_at`
-- expired TTL tags are deleted by the reaper through the registry manifest delete API
+## Important Caveat: Suffixes are Real Tags
+Docker does not support metadata aliases without an external control plane. If you push an image with a `--ttl-7d` suffix, the user must pull it using that exact suffix:
+```bash
+docker pull aocr.aerol.ai/aocr/my-image:main--ttl-7d
+```
 
-## Storage Reclamation Caveat
+## Storage Reclamation (Garbage Collection)
+When the Reaper deletes an expired tag, it only deletes the **manifest** (the metadata linking the tag to its underlying layer blobs). The actual gigabytes of layer data remain in S3 because they might be shared by other active images.
 
-Manifest deletion makes blobs eligible for registry garbage collection, but it does not immediately free underlying storage.
+To physically free up S3 storage space, you must run Garbage Collection:
+1. Garbage Collection scans the S3 bucket for blobs that are no longer referenced by any active manifest.
+2. It permanently deletes those orphaned blobs.
 
-Docker Distribution still needs a separate mark-and-sweep garbage collection run to reclaim unreferenced blobs. That operational workflow is separate from phase-1 TTL support.
-
-## Upgrade Note
-
-For an existing deployment, run [db/migrate-retention-policies.sql](./db/migrate-retention-policies.sql) before rolling out the updated hooks and reaper images.
+Garbage Collection is configured via the `registryGc` section in your Helm `values.yaml` file, which sets up a `CronJob` to handle this operation efficiently. For local testing, you can use `docker-compose -f docker-compose.yaml -f docker-compose.gc.yaml up registry-gc`.

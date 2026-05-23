@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'aocr (aerol.ai) - Authenticated OCI Registry',
-  description: 'High-performance, authenticated OCI registry for aerol.ai with latest-only repository cleanup.',
+  description: 'High-performance, authenticated OCI registry for aerol.ai with policy-based retention and garbage collection.',
   icons: {
     icon: [
       {

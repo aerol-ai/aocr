@@ -8,7 +8,7 @@
 
 - **Authenticated access** with Docker token auth.
 - **PAT-backed validation** against an upstream `/api/auth/info` endpoint.
-- **Repository-aware cleanup** with a reaper that keeps plain tags latest-only and expires `--ttl-*` tags by age.
+- **Repository-aware cleanup** with a reaper that keeps plain tags latest-only and expires tags based on age (`--ttl-*`) or inactivity (`--idle-*`).
 - **PostgreSQL metadata** for users, repositories, and pushed tags.
 - **S3-compatible storage** for manifests and layers.
 - **Helm for Kubernetes and Docker Compose for local development**.
@@ -32,6 +32,8 @@ docker tag my-image aocr.aerol.ai/aocr/my-image:main
 docker push aocr.aerol.ai/aocr/my-image:main
 docker tag my-image aocr.aerol.ai/aocr/my-image:main--ttl-7d
 docker push aocr.aerol.ai/aocr/my-image:main--ttl-7d
+docker tag my-image aocr.aerol.ai/aocr/my-image:main--idle-30d
+docker push aocr.aerol.ai/aocr/my-image:main--idle-30d
 docker pull aocr.aerol.ai/aocr/my-image:main
 ```
 
@@ -40,19 +42,17 @@ How hosted login works:
 - The presented login name must match the validated user profile's `id`, `username`, or `email`.
 - End users never need the internal webhook secret used by the deployment.
 
-Plain tags still follow latest-only cleanup. Tags with supported `--ttl-*` suffixes remain pullable until their TTL expires.
+Plain tags still follow latest-only cleanup. Tags with supported `--ttl-*` or `--idle-*` suffixes remain pullable until their respective policy expires.
 
-Supported phase-1 TTL suffixes include:
+Supported Age TTL suffixes include:
 
-- `--ttl-1h`
-- `--ttl-6h`
-- `--ttl-24h`
-- `--ttl-7d`
-- `--ttl-30d`
-- `--ttl-90d`
-- `--ttl-180d`
-- `--ttl-365d`
+- `--ttl-1h`, `--ttl-6h`, `--ttl-24h`
+- `--ttl-7d`, `--ttl-30d`, `--ttl-90d`, `--ttl-180d`, `--ttl-365d`
 - aliases `--ttl-1month`, `--ttl-3month`, `--ttl-6month`, `--ttl-12month`
+
+Supported Idle TTL suffixes include:
+
+- `--idle-7d`, `--idle-30d`, `--idle-90d`, `--idle-180d`
 
 For syntax details and operational caveats, see [RETENTION.md](./RETENTION.md).
 
