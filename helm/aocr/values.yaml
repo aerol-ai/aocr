@@ -38,6 +38,16 @@ auth:
     token: ""
     tokens: []
 
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+
 # Registry Configuration
 registry:
   port: 5000

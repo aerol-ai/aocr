@@ -149,7 +149,38 @@ Notes:
 - `VALIDATION_SERVICE_URL` should point to the upstream auth-info endpoint that accepts `Authorization: Bearer <your-token>` and returns user identity details.
 - End users do not call `VALIDATION_SERVICE_URL` directly. They log in to the registry with the token your application gave them.
 
+## Metrics
+
+The chart now exposes scrapeable metrics for the pull-path services:
+
+- `auth`: `/metrics` on port `8080`
+- `hooks`: `/metrics` on port `8000`
+- `registry`: `/metrics` on debug port `5001`
+
+By default, the auth, hooks, and registry pods and services are annotated with `prometheus.io/scrape`, `prometheus.io/path`, and `prometheus.io/port`.
+
+If you use the Prometheus Operator, you can also enable ServiceMonitor resources:
+
+```yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+```
+
+You can also enable bundled Prometheus alert rules for the auth and hooks metrics:
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+```
+
+An importable Grafana dashboard is available at [deploy/grafana/aocr-observability-dashboard.json](./deploy/grafana/aocr-observability-dashboard.json).
+
+For the full metrics matrix and the key metric names per service, see [OBSERVABILITY.md](./OBSERVABILITY.md).
+
 ## Related Docs
 
 - [README.md](./README.md) for hosted `aocr.aerol.ai` usage
+- [OBSERVABILITY.md](./OBSERVABILITY.md) for metrics endpoints and metric coverage
 - [understanding.md](./understanding.md) for architecture and push lifecycle

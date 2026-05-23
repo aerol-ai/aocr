@@ -52,6 +52,8 @@ If you want to run your own aocr instance:
 ## Architecture
 
 For the request and cleanup flow, see [understanding.md](./understanding.md).
+For metrics endpoints and the service-by-service metrics matrix, see [OBSERVABILITY.md](./OBSERVABILITY.md).
+The repository also includes an importable Grafana dashboard at [deploy/grafana/aocr-observability-dashboard.json](./deploy/grafana/aocr-observability-dashboard.json).
 
 ## GitHub Actions
 

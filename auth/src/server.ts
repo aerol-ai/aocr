@@ -3,6 +3,16 @@ import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import crypto from 'crypto';
+import {
+  bindMetricsPool,
+  elapsedSecondsSince,
+  mountMetrics,
+  recordDatabaseSync,
+  recordTokenIssuance,
+  recordTokenValidation,
+  recordUpstreamValidation,
+  setConfiguredPatCount,
+} from './metrics';
 
 function computeLibtrustKeyId(privateKeyPem: string): string {
   const privateKey = crypto.createPrivateKey(privateKeyPem);
@@ -53,6 +63,7 @@ function getDatabaseConnectionString(): string {
 const pool = new Pool({
   connectionString: getDatabaseConnectionString(),
 });
+bindMetricsPool(pool);
 
 const VALIDATION_SERVICE_URL = process.env.VALIDATION_SERVICE_URL;
 const AUTH_PAT_TOKEN = process.env.AUTH_PAT_TOKEN;
@@ -64,6 +75,7 @@ const STATIC_PAT_SUBJECT = 'static-pat';
 const STATIC_PAT_PROVIDER = 'static-pat';
 
 app.use(express.json());
+mountMetrics(app);
 
 interface ValidationUserProfile {
   externalId: string;
@@ -135,6 +147,7 @@ function getStaticPatConfig(): StaticPatConfig | null {
 }
 
 const STATIC_PAT_CONFIG = getStaticPatConfig();
+setConfiguredPatCount(STATIC_PAT_CONFIG?.tokens.length || 0);
 
 function getValidationInfoUrl(): string {
   if (!VALIDATION_SERVICE_URL) {
@@ -232,25 +245,49 @@ function validateUsingStaticPat(validationToken: string): ValidationResult | nul
 }
 
 async function validateUsingApi(validationToken: string): Promise<ValidationResult> {
-  const response = await axios.get(getValidationInfoUrl(), {
-    headers: { Authorization: `Bearer ${validationToken}` },
-    timeout: 10000,
-  });
+  const startedAt = process.hrtime.bigint();
 
-  return {
-    strategy: 'api',
-    userProfile: normalizeValidationProfile(response.data),
-  };
+  try {
+    const response = await axios.get(getValidationInfoUrl(), {
+      headers: { Authorization: `Bearer ${validationToken}` },
+      timeout: 10000,
+    });
+
+    recordUpstreamValidation('success', elapsedSecondsSince(startedAt));
+
+    return {
+      strategy: 'api',
+      userProfile: normalizeValidationProfile(response.data),
+    };
+  } catch (error) {
+    recordUpstreamValidation('error', elapsedSecondsSince(startedAt));
+    throw error;
+  }
 }
 
 async function validatePresentedToken(validationToken: string): Promise<ValidationResult> {
-  const staticPatResult = validateUsingStaticPat(validationToken);
-  if (staticPatResult) {
-    return staticPatResult;
+  if (STATIC_PAT_CONFIG) {
+    const startedAt = process.hrtime.bigint();
+    const staticPatResult = validateUsingStaticPat(validationToken);
+    if (staticPatResult) {
+      recordTokenValidation('pat', 'success', elapsedSecondsSince(startedAt));
+      return staticPatResult;
+    }
+
+    recordTokenValidation('pat', 'miss', elapsedSecondsSince(startedAt));
   }
 
   if (VALIDATION_SERVICE_URL) {
-    return validateUsingApi(validationToken);
+    const startedAt = process.hrtime.bigint();
+
+    try {
+      const validationResult = await validateUsingApi(validationToken);
+      recordTokenValidation('api', 'success', elapsedSecondsSince(startedAt));
+      return validationResult;
+    } catch (error) {
+      recordTokenValidation('api', 'error', elapsedSecondsSince(startedAt));
+      throw error;
+    }
   }
 
   if (STATIC_PAT_CONFIG) {
@@ -284,12 +321,14 @@ function presentedIdentityMatchesUser(presentedIdentity: string | null, account:
 app.get('/v2/token', async (req, res) => {
   const { account, service, scope } = req.query;
   const authHeader = req.headers.authorization;
+  let validationStrategy: 'api' | 'pat' | 'unknown' = 'unknown';
 
   try {
     const { validationToken, presentedIdentity } = extractPresentedCredentials(authHeader);
 
     // 1. Validate with the static PAT fast-path first, then fall back to the API validator.
     const validationResult = await validatePresentedToken(validationToken);
+    validationStrategy = validationResult.strategy;
     const userProfile = validationResult.userProfile;
     if (validationResult.strategy === 'api' && !presentedIdentityMatchesUser(presentedIdentity, account, userProfile)) {
       return res.status(401).json({ error: 'Presented registry identity does not match validated user' });
@@ -297,6 +336,7 @@ app.get('/v2/token', async (req, res) => {
 
     // 2. Sync user and repository metadata in Postgres
     if (validationResult.strategy === 'api') {
+      const dbSyncStartedAt = process.hrtime.bigint();
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -343,8 +383,10 @@ app.get('/v2/token', async (req, res) => {
         }
 
         await client.query('COMMIT');
+        recordDatabaseSync('success', elapsedSecondsSince(dbSyncStartedAt));
       } catch (err) {
         await client.query('ROLLBACK');
+        recordDatabaseSync('error', elapsedSecondsSince(dbSyncStartedAt));
         console.error('Database sync error:', err);
       } finally {
         client.release();
@@ -396,8 +438,10 @@ app.get('/v2/token', async (req, res) => {
       expires_in: 3600,
       issued_at: new Date().toISOString()
     });
+    recordTokenIssuance(validationStrategy, 'success');
 
   } catch (err) {
+    recordTokenIssuance(validationStrategy, 'error');
     console.error('[token] error:', err);
     res.status(401).json({ error: 'Invalid token' });
   }
