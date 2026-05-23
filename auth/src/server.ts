@@ -626,9 +626,9 @@ app.get('/v1/images', async (req, res) => {
 
     const scope: 'admin' | 'user' = result.strategy === 'pat' ? 'admin' : 'user';
 
-    let rows;
+    let page;
     try {
-      rows = scope === 'admin'
+      page = scope === 'admin'
         ? await listAllImages(pool, limit, offset)
         : await listImagesForExternalId(pool, result.userProfile.externalId, limit, offset);
     } catch (dbErr) {
@@ -645,8 +645,10 @@ app.get('/v1/images', async (req, res) => {
       },
       limit,
       offset,
-      count: rows.length,
-      images: rows,
+      count: page.rows.length,
+      has_more: page.hasMore,
+      next_offset: page.hasMore ? offset + page.rows.length : null,
+      images: page.rows,
     });
   } catch (err) {
     console.error('[images] auth error:', err);
