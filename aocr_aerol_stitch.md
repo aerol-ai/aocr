@@ -468,8 +468,9 @@ When you forget where something lives:
    `auth.<domain>`); secrets land in `aocr.sh/secrets/`.
 2. Per AerolVM cluster: copy `upstream_wrap_key` + `internal_api_token`
    from `aocr.sh/secrets/`, pick a `cluster_id` label, plug into either
-   `terraform.tfvars` (Terraform path) or `inventory/group_vars/all.yml` +
-   two control-node files (Ansible path), apply.
+   `terraform.tfvars` (Terraform path) or
+   `inventory/group_vars/all/local.yml` (Ansible path; inline values OR
+   `_src` paths to control-node files), apply.
 3. Verify: env on a node, then `curl /v1/images` on AOCR.
 4. Rotate by editing the source on AOCR + re-applying on the cluster.
    Adding a second cluster is the same recipe with a different
