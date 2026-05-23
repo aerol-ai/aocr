@@ -60,6 +60,34 @@ If you ever need to manually override these (e.g., specifying an AWS profile or 
 
 The playbook will handle namespace creation, idempotent certificate generation, file syncing, environment injection, and Helm upgrades automatically.
 
+## Database Schema Upgrades
+
+The schema lives in `helm/aocr/files/init.sql` (mirrored from `db/init.sql`). The chart mounts it into the Postgres pod's `/docker-entrypoint-initdb.d/` directory, but the official `postgres` image only executes that directory on **first boot** when the data volume is empty. Any `ALTER TABLE … ADD COLUMN IF NOT EXISTS` added after the cluster was first provisioned will never run on its own — the deploy will succeed, but app pods that reference the new columns will fail at runtime with `column "…" does not exist`.
+
+`deploy-aocr.yml` handles this automatically: right after `helm upgrade` and before the rollout restart, it copies the current `helm/aocr/files/init.sql` to the remote VM, then pipes it into `psql` inside the Postgres pod. `init.sql` is fully idempotent (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, plus value backfills gated on `NULL`), so re-running against a populated DB is a no-op except for the missing objects.
+
+Auth: the `psql` invocation runs **inside** the Postgres container and talks to its own server over a Unix socket, which the postgres image's default `pg_hba.conf` treats as local `trust`. No `PGPASSWORD` is involved — the gate is the kubeconfig that lets us `kubectl exec` into the pod in the first place. The Postgres password in `secrets.yml` is still very much in use for the TCP connections that the auth / hooks / reaper pods open against the `aocr-postgres` Service.
+
+### Apply the schema standalone
+
+If you only want to fix up the schema (e.g., you hit `column does not exist` on a deployed cluster and don't want to redeploy the whole stack):
+
+```bash
+cd ansible
+ansible-playbook playbooks/apply-db-schema.yml
+```
+
+That playbook does exactly the same `kubectl exec | psql` step in isolation. Safe to run as many times as you like.
+
+### When you change the schema
+
+1. Edit `db/init.sql` (the canonical source).
+2. Mirror the change into `helm/aocr/files/init.sql` — the chart can't read from outside its own directory.
+3. Bump `helm/aocr/Chart.yaml` so CI publishes a new chart version.
+4. Re-run `ansible-playbook playbooks/deploy-aocr.yml -e "aocr_helm_chart_version=<new>"`. The schema-sync step picks up the new `init.sql` automatically.
+
+Schema removals / renames are **not** safe to express in `init.sql` (the file is "ensure this exists"-style, not migration-style). Anything destructive needs a hand-written one-shot `psql` against the live DB, ideally inside its own playbook so it's reviewable and auditable.
+
 ## Authentication: API + Admin PAT
 
 The registry supports two parallel authentication paths, and both are wired by this playbook:
