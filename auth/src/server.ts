@@ -26,6 +26,12 @@ import {
   setConfiguredClusterPatCount,
   setConfiguredPatCount,
 } from './metrics';
+import {
+  listAllImages,
+  listImagesForExternalId,
+  parseLimit,
+  parseOffset,
+} from './imageList';
 
 function computeLibtrustKeyId(privateKeyPem: string): string {
   const privateKey = crypto.createPrivateKey(privateKeyPem);
@@ -603,6 +609,50 @@ app.get('/v2/token', async (req, res) => {
     recordTokenIssuance(validationStrategy, 'error');
     console.error('[token] error:', err);
     res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+app.get('/v1/images', async (req, res) => {
+  try {
+    const { validationToken } = extractPresentedCredentials(req.headers.authorization);
+    const result = await validatePresentedToken(validationToken, null);
+
+    if (result.strategy === 'cluster-pat' || result.strategy === 'wrapped-upstream') {
+      return res.status(403).json({ error: 'unsupported_scope' });
+    }
+
+    const limit = parseLimit(req.query.limit);
+    const offset = parseOffset(req.query.offset);
+
+    const scope: 'admin' | 'user' = result.strategy === 'pat' ? 'admin' : 'user';
+
+    let page;
+    try {
+      page = scope === 'admin'
+        ? await listAllImages(pool, limit, offset)
+        : await listImagesForExternalId(pool, result.userProfile.externalId, limit, offset);
+    } catch (dbErr) {
+      console.error('[images] db error:', dbErr);
+      return res.status(500).json({ error: 'db_error' });
+    }
+
+    res.json({
+      scope,
+      user: scope === 'admin' ? null : {
+        external_id: result.userProfile.externalId,
+        username: result.userProfile.username,
+        email: result.userProfile.email,
+      },
+      limit,
+      offset,
+      count: page.rows.length,
+      has_more: page.hasMore,
+      next_offset: page.hasMore ? offset + page.rows.length : null,
+      images: page.rows,
+    });
+  } catch (err) {
+    console.error('[images] auth error:', err);
+    res.status(401).json({ error: 'invalid_token' });
   }
 });
 
