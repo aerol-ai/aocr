@@ -114,7 +114,7 @@ describe('evaluateClusterPatScope', () => {
     const decision = evaluateClusterPatScope(
       CLUSTER_A,
       'repository',
-      'mirror/_/ghcr/aerol-ai/foo',
+      'mirror/aocr/ghcr/aerol-ai/foo',
       ['pull', 'push'],
     );
     assert.equal(decision.allowed, true);
@@ -125,7 +125,7 @@ describe('evaluateClusterPatScope', () => {
     const decision = evaluateClusterPatScope(
       CLUSTER_A,
       'repository',
-      'aocr/my-user-image',
+      'acme/my-user-image',
       ['pull'],
     );
     assert.equal(decision.allowed, false);

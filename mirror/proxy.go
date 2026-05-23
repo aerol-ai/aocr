@@ -203,21 +203,56 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, res Resolved)
 		return
 	}
 
+	// Tee the upstream body into both the client response and the writer
+	// sidecar's upload. If the writer fails (down, S3 misconfigured, slow),
+	// the client must still receive the full body — caching is best-effort.
+	//
+	// The previous implementation used io.MultiWriter(w, pipeW). When
+	// UploadBlob errored before reading pipeR (e.g. POST init returned 500),
+	// nothing drained the pipe, pipeW.Write blocked forever, and the docker
+	// client hung mid-pull. We now (a) close pipeR with the upload error so
+	// subsequent pipe writes return immediately, and (b) use a tee writer
+	// that swallows cache-side failures and keeps streaming to the client.
 	pipeR, pipeW := io.Pipe()
 	uploadErrCh := make(chan error, 1)
 	go func() {
-		uploadErrCh <- p.writer.UploadBlob(ctx, res.Storage, res.Reference, size, pipeR)
+		err := p.writer.UploadBlob(ctx, res.Storage, res.Reference, size, pipeR)
+		if err != nil {
+			// Unblock any pending pipeW.Write so io.Copy below returns.
+			_ = pipeR.CloseWithError(err)
+		}
+		uploadErrCh <- err
 	}()
 
-	tee := io.MultiWriter(w, pipeW)
+	tee := &resilientTee{client: w, cache: pipeW}
 	n, copyErr := io.Copy(tee, upstreamResp.Body)
 	closeErr := pipeW.Close()
 	uploadErr := <-uploadErrCh
 	p.metrics.AddBytesServed(res.Upstream.Slug(), n)
 
-	if copyErr != nil || closeErr != nil || uploadErr != nil {
+	if copyErr != nil || closeErr != nil || uploadErr != nil || tee.cacheBroken {
 		p.metrics.RecordWriterError(res.Upstream.Slug())
 	}
+}
+
+// resilientTee writes every chunk to the client and best-effort to the cache.
+// Once a cache write fails, further chunks skip the cache so a wedged writer
+// sidecar cannot stall the client-side stream. io.Copy semantics require that
+// Write returns n == len(p) on success; we only ever report the client's count
+// so a short cache write is invisible to the caller.
+type resilientTee struct {
+	client      io.Writer
+	cache       io.Writer
+	cacheBroken bool
+}
+
+func (t *resilientTee) Write(p []byte) (int, error) {
+	if !t.cacheBroken {
+		if _, err := t.cache.Write(p); err != nil {
+			t.cacheBroken = true
+		}
+	}
+	return t.client.Write(p)
 }
 
 func (p *Proxy) streamBlobFromWriter(w http.ResponseWriter, r *http.Request, res Resolved) {

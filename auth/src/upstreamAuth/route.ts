@@ -3,12 +3,18 @@
 // mirror vhost) into the upstream host + upstream-side repo path.
 //
 // The mirror's URL scheme (see MIRROR.md "Day-1 upstreams"):
-//   library/<repo>          → docker.io,        library/<repo>
-//   <user>/<repo>           → docker.io,        <user>/<repo>
-//   _/ghcr/<org>/<repo>     → ghcr.io,          <org>/<repo>
-//   _/gcr/<proj>/<repo>     → gcr.io,           <proj>/<repo>
-//   _/quay/<org>/<repo>     → quay.io,          <org>/<repo>
-//   _/k8s/<repo>            → registry.k8s.io,  <repo>
+//   library/<repo>             → docker.io,        library/<repo>
+//   <user>/<repo>              → docker.io,        <user>/<repo>
+//   aocr/ghcr/<org>/<repo>     → ghcr.io,          <org>/<repo>
+//   aocr/gcr/<proj>/<repo>     → gcr.io,           <proj>/<repo>
+//   aocr/quay/<org>/<repo>     → quay.io,          <org>/<repo>
+//   aocr/k8s/<repo>            → registry.k8s.io,  <repo>
+//
+// `aocr` is the reserved disambiguator segment. Earlier drafts used `_`
+// (Distribution v2 reserved-namespace convention) but Docker's reference
+// grammar (distribution/reference) rejects `_` as a component, so the
+// daemon errored out with "invalid reference format" before requests
+// reached the mirror.
 //
 // The wrap envelope carries `creds.upstreamHost` independently (sandboxd
 // knows which upstream the user's creds are for). The auth service
@@ -23,10 +29,10 @@ export type UpstreamRoute = {
 };
 
 const PREFIX_TABLE: Array<{ prefix: string; host: string }> = [
-  { prefix: '_/ghcr/', host: 'ghcr.io' },
-  { prefix: '_/gcr/', host: 'gcr.io' },
-  { prefix: '_/quay/', host: 'quay.io' },
-  { prefix: '_/k8s/', host: 'registry.k8s.io' },
+  { prefix: 'aocr/ghcr/', host: 'ghcr.io' },
+  { prefix: 'aocr/gcr/', host: 'gcr.io' },
+  { prefix: 'aocr/quay/', host: 'quay.io' },
+  { prefix: 'aocr/k8s/', host: 'registry.k8s.io' },
 ];
 
 export function routeMirrorRepoToUpstream(mirrorRepo: string): UpstreamRoute | null {
@@ -40,13 +46,13 @@ export function routeMirrorRepoToUpstream(mirrorRepo: string): UpstreamRoute | n
     }
   }
 
-  // No `_/<short>/` prefix → assume Docker Hub. DockerHub's two shapes:
+  // No `aocr/<short>/` prefix → assume Docker Hub. DockerHub's two shapes:
   //   `library/<repo>` (single-segment shortcuts: redis, nginx, etc.)
   //   `<user>/<repo>`  (user/org namespace)
   // Both pass straight through to the upstream.
-  if (mirrorRepo.startsWith('_/')) {
-    // `_/something-else/...` is reserved-but-unknown — reject rather than
-    // letting it leak to docker.io.
+  if (mirrorRepo === 'aocr' || mirrorRepo.startsWith('aocr/')) {
+    // `aocr/something-else/...` is reserved-but-unknown — reject rather
+    // than letting it leak to docker.io.
     return null;
   }
   return { host: 'docker.io', upstreamRepo: mirrorRepo };

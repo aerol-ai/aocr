@@ -44,7 +44,7 @@ export interface InferredProvenance {
 
 /**
  * Parse a Distribution v2 repository path (e.g. "cluster/<uuid>/snap" or
- * "mirror/_/ghcr/org/repo") into (organization, name, provenance, ...).
+ * "mirror/aocr/ghcr/org/repo") into (organization, name, provenance, ...).
  *
  * - `cluster/...` -> provenance=cluster-snapshot; clusterId is the second
  *   segment if it parses as a UUID, else null (still flagged cluster-snapshot).

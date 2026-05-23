@@ -28,10 +28,10 @@ const SAMPLE_CREDS: UpstreamCredentials = {
   upstreamHost: 'ghcr.io',
   username: 'octocat',
   password: 'ghp_xxxxxxxxxxxx',
-  scope: 'repository:_/ghcr/aerol-ai/sandbox:pull',
+  scope: 'repository:aocr/ghcr/aerol-ai/sandbox:pull',
 };
-const SCOPE = 'repository:_/ghcr/aerol-ai/sandbox:pull';
-// Upstream-side repo after the route helper strips `_/ghcr/`. This is what
+const SCOPE = 'repository:aocr/ghcr/aerol-ai/sandbox:pull';
+// Upstream-side repo after the route helper strips `aocr/ghcr/`. This is what
 // the proof cache and probes see end-to-end.
 const REPO = 'aerol-ai/sandbox';
 
@@ -59,7 +59,7 @@ describe('isWrappedUpstreamToken', () => {
 describe('extractRepoFromScope', () => {
   it('returns the name segment of repository scope strings', () => {
     assert.equal(extractRepoFromScope('repository:library/redis:pull'), 'library/redis');
-    assert.equal(extractRepoFromScope('repository:_/ghcr/org/repo:pull,push'), '_/ghcr/org/repo');
+    assert.equal(extractRepoFromScope('repository:aocr/ghcr/org/repo:pull,push'), 'aocr/ghcr/org/repo');
   });
 
   it('returns null for empty / non-string / malformed input', () => {
@@ -109,7 +109,7 @@ describe('validateWrappedUpstream success path', () => {
       proofCache: cache,
       resolveProbe: () => probe,
     });
-    const otherScope = 'repository:_/ghcr/aerol-ai/other:pull';
+    const otherScope = 'repository:aocr/ghcr/aerol-ai/other:pull';
     await validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), otherScope, {
       keyRing: ring,
       proofCache: cache,
@@ -206,7 +206,7 @@ describe('validateWrappedUpstream rejection', () => {
 
     // A different repo against the same identity probes again; that probe
     // is transiently unreachable. The cached proof for REPO must remain.
-    const otherScope = 'repository:_/ghcr/aerol-ai/other:pull';
+    const otherScope = 'repository:aocr/ghcr/aerol-ai/other:pull';
     const flaky = new FixedProbe({ ok: false, reason: 'unreachable', detail: 'ETIMEDOUT' });
     await assert.rejects(
       validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), otherScope, {
@@ -238,11 +238,11 @@ describe('validateWrappedUpstream routing', () => {
     assert.equal(probe.calls, 0, 'must not probe when routing fails');
   });
 
-  it('rejects an unknown _/ reserved prefix', async () => {
+  it('rejects an unknown aocr/ reserved prefix', async () => {
     const ring = freshRing();
     const cache = new ProofCache();
     const probe = new FixedProbe({ ok: true, upstreamBearer: 'x' });
-    const unknownScope = 'repository:_/unknown/foo/bar:pull';
+    const unknownScope = 'repository:aocr/unknown/foo/bar:pull';
     await assert.rejects(
       validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), unknownScope, {
         keyRing: ring,
@@ -253,7 +253,7 @@ describe('validateWrappedUpstream routing', () => {
     );
   });
 
-  it('strips the _/ghcr/ prefix before handing the repo to the probe', async () => {
+  it('strips the aocr/ghcr/ prefix before handing the repo to the probe', async () => {
     const ring = freshRing();
     const cache = new ProofCache();
     let observedRepo = '';

@@ -64,7 +64,7 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name:        "explicit ghcr selection",
-			path:        "/v2/_/ghcr/aerol-ai/sandbox/manifests/v1",
+			path:        "/v2/aocr/ghcr/aerol-ai/sandbox/manifests/v1",
 			wantSlug:    "ghcr",
 			wantRepo:    "aerol-ai/sandbox",
 			wantStorage: "mirror/ghcr/aerol-ai/sandbox",
@@ -73,7 +73,7 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name:        "explicit quay multi-segment repo with a 'blobs' segment in the name",
-			path:        "/v2/_/quay/foo/blobsy/manifests/latest",
+			path:        "/v2/aocr/quay/foo/blobsy/manifests/latest",
 			wantSlug:    "quay",
 			wantRepo:    "foo/blobsy",
 			wantStorage: "mirror/quay/foo/blobsy",
@@ -82,7 +82,7 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name:    "unknown explicit upstream is rejected",
-			path:    "/v2/_/notreal/foo/bar/manifests/latest",
+			path:    "/v2/aocr/notreal/foo/bar/manifests/latest",
 			wantErr: ErrUnknownUpstream,
 		},
 		{
@@ -96,8 +96,8 @@ func TestResolve(t *testing.T) {
 			wantErr: ErrNotRegistryRequest,
 		},
 		{
-			name:    "underscore-only without slug is unknown upstream",
-			path:    "/v2/_/manifests/latest",
+			name:    "aocr prefix without slug is unknown upstream",
+			path:    "/v2/aocr/manifests/latest",
 			wantErr: ErrUnknownUpstream,
 		},
 	}
