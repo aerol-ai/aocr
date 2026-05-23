@@ -56,6 +56,37 @@ Supported Idle TTL suffixes include:
 
 For syntax details and operational caveats, see [RETENTION.md](./RETENTION.md).
 
+## Images API
+
+`GET /v1/images` on the auth service returns the tags AOCR knows about
+along with their provenance, retention mode, and computed expiry.
+
+Two scopes, distinguished by the credential:
+
+- **Admin** — the static PAT (`auth.pat.token` /
+  `aocr_auth_pat_token`) returns every image in the registry.
+- **User** — a token validated through `auth.validationServiceUrl` is
+  scoped to the caller's `external_id`; the response includes only
+  images stored in repositories owned by that user.
+
+```bash
+# Admin (static PAT)
+curl -sS -H "Authorization: Bearer $AOCR_PAT" \
+  https://aocr.<domain>/v1/images?limit=50 | jq .
+
+# Per-user (token from your validation service)
+curl -sS -H "Authorization: Bearer $USER_TOKEN" \
+  https://aocr.<domain>/v1/images | jq .
+```
+
+Each row carries `repository`, `tag`, `manifest_digest`, `provenance`
+(`pushed` / `mirror` / `cluster-snapshot`), `upstream_ref`,
+`retention_mode`, `retention_value_seconds`, `last_pushed_at`,
+`last_pulled_at`, and an `expires_at` computed for `ttl` and `idle`
+modes (`null` for `keep-latest`). Cluster PATs and wrapped-upstream
+tokens are not supported on this endpoint and return `403
+unsupported_scope`.
+
 ## Deploy Your Own
 
 If you want to run your own aocr instance:
