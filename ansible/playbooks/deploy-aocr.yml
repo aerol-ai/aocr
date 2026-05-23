@@ -1,0 +1,127 @@
+---
+# Playbook to deploy or upgrade the AOCR application on Kubernetes via Helm
+#
+# Usage:
+#   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... ansible-playbook playbooks/deploy-aocr.yml
+
+- name: Deploy AOCR Helm Chart on the VM
+  hosts: all
+  gather_facts: false
+
+  pre_tasks:
+    - name: Ensure vars.yml is configured
+      ansible.builtin.assert:
+        that:
+          - aocr_global_domain is defined
+          - aocr_registry_s3_bucket is defined
+        fail_msg: "Required variables missing. Please ensure you have copied inventory/group_vars/all/vars.yml.example to vars.yml and populated it."
+    - name: Get AWS Access Key from profile
+      delegate_to: localhost
+      ansible.builtin.command: "aws configure get aws_access_key_id --profile {{ aocr_aws_profile | default('default', true) }}"
+      register: aws_access_key_cmd
+      changed_when: false
+
+    - name: Get AWS Secret Key from profile
+      delegate_to: localhost
+      ansible.builtin.command: "aws configure get aws_secret_access_key --profile {{ aocr_aws_profile | default('default', true) }}"
+      register: aws_secret_key_cmd
+      changed_when: false
+
+    - name: Set AWS Credential Facts
+      delegate_to: localhost
+      ansible.builtin.set_fact:
+        resolved_aws_access_key: "{{ aws_access_key_cmd.stdout }}"
+        resolved_aws_secret_key: "{{ aws_secret_key_cmd.stdout }}"
+
+    - name: Ensure AWS credentials were found
+      delegate_to: localhost
+      ansible.builtin.assert:
+        that:
+          - resolved_aws_access_key | length > 0
+          - resolved_aws_secret_key | length > 0
+        fail_msg: "Failed to read AWS credentials for profile '{{ aocr_aws_profile | default('default') }}'."
+
+    - name: Ensure local secrets directory exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../secrets"
+        state: directory
+        mode: '0700'
+
+    - name: Generate JWT private key locally if it does not exist
+      delegate_to: localhost
+      ansible.builtin.command:
+        cmd: "openssl genrsa -out {{ aocr_jwt_private_key_path }} 2048"
+        creates: "{{ aocr_jwt_private_key_path }}"
+
+    - name: Generate JWT public certificate locally if it does not exist
+      delegate_to: localhost
+      ansible.builtin.command:
+        cmd: "openssl req -new -x509 -key {{ aocr_jwt_private_key_path }} -out {{ aocr_jwt_public_certificate_path }} -days 3650 -subj '/CN=aocr-auth'"
+        creates: "{{ aocr_jwt_public_certificate_path }}"
+
+    - name: Set secure permissions on JWT files locally
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: '0600'
+      loop:
+        - "{{ aocr_jwt_private_key_path }}"
+        - "{{ aocr_jwt_public_certificate_path }}"
+
+    - name: Generate passwords dynamically if not provided
+      delegate_to: localhost
+      ansible.builtin.set_fact:
+        final_postgres_password: "{{ aocr_postgres_password | default(lookup('password', playbook_dir + '/../../secrets/postgres_password length=32 chars=ascii_letters,digits'), true) }}"
+        final_redis_password: "{{ aocr_redis_password | default(lookup('password', playbook_dir + '/../../secrets/redis_password length=32 chars=ascii_letters,digits'), true) }}"
+        final_hooks_token: "{{ aocr_hooks_token | default(lookup('password', playbook_dir + '/../../secrets/hooks_token length=64 chars=ascii_letters,digits'), true) }}"
+        final_registry_replregSecret: "{{ aocr_registry_replregSecret | default(lookup('password', playbook_dir + '/../../secrets/registry_secret length=64 chars=ascii_letters,digits'), true) }}"
+
+  tasks:
+    - name: Create secrets directory on the remote VM
+      ansible.builtin.file:
+        path: "/home/ubuntu/aocr-secrets"
+        state: directory
+        mode: '0700'
+
+    - name: Copy JWT certificates to the remote VM
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/home/ubuntu/aocr-secrets/{{ item | basename }}"
+        mode: '0600'
+      loop:
+        - "{{ aocr_jwt_private_key_path }}"
+        - "{{ aocr_jwt_public_certificate_path }}"
+
+    - name: Run Helm Upgrade on the VM
+      ansible.builtin.command:
+        cmd: >
+          helm upgrade --install {{ aocr_helm_release_name }} {{ aocr_helm_chart_ref }}
+          --version {{ aocr_helm_chart_version }}
+          --namespace {{ aocr_namespace }}
+          --create-namespace
+          --set image.repository="{{ aocr_image_repository }}"
+          --set image.tag="{{ aocr_image_tag }}"
+          --set global.domain="{{ aocr_global_domain }}"
+          --set postgres.password="{{ final_postgres_password }}"
+          --set redis.password="{{ final_redis_password }}"
+          --set hooks.token="{{ final_hooks_token }}"
+          --set registry.replregSecret="{{ final_registry_replregSecret }}"
+          --set registry.s3.region="{{ aocr_registry_s3_region }}"
+          --set registry.s3.bucket="{{ aocr_registry_s3_bucket }}"
+          --set registry.s3.accessKey="{{ resolved_aws_access_key }}"
+          --set registry.s3.secretKey="{{ resolved_aws_secret_key }}"
+          --set auth.validationServiceUrl="{{ aocr_auth_validationServiceUrl }}"
+          --set-file auth.jwtPrivateKey="/home/ubuntu/aocr-secrets/jwt-private.pem"
+          --set-file auth.jwtPublicCertificate="/home/ubuntu/aocr-secrets/jwt-public.crt"
+      changed_when: true
+
+    - name: Verify Helm Release Status
+      ansible.builtin.command:
+        cmd: "helm status {{ aocr_helm_release_name }} -n {{ aocr_namespace }}"
+      register: helm_status
+      changed_when: false
+
+    - name: Display Helm Status
+      ansible.builtin.debug:
+        var: helm_status.stdout_lines

@@ -15,3 +15,11 @@ web/node_modules/
 minio/data/
 postgres/data/
 redis/data/
+# Secrets & Keys
+secrets/
+*secrets*.yml
+*secrets*.yml.example
+*.pem
+*.crt
+*.key
+ansible/inventory/group_vars/all/vars.yml
