@@ -218,6 +218,7 @@ export class HookAPI {
         const mediaType = event.target.mediaType;
 
         if (!image || !tag || !mediaType || !mediaType.includes("manifest")) {
+          console.log(`hook: pull event skipped repo=${image} tag=${tag} mediaType=${mediaType} (missing tag, repo, or non-manifest mediaType — blob pulls and digest-only pulls do not fire last_pulled_at updates)`);
           continue;
         }
 
@@ -228,7 +229,8 @@ export class HookAPI {
             const postgresStartedAt = process.hrtime.bigint();
             const pgClient = await pool.connect();
             try {
-              await pgClient.query(UPDATE_LAST_PULLED_AT_SQL, [organization, name, tag]);
+              const result = await pgClient.query(UPDATE_LAST_PULLED_AT_SQL, [organization, name, tag]);
+              console.log(`hook: pull update org=${organization} name=${name} tag=${tag} rows_updated=${result.rowCount} (0 = no matching row OR last_pulled_at refreshed within the past hour)`);
               recordPostgresSync("success", elapsedSecondsSince(postgresStartedAt));
             } catch (err) {
               recordPostgresSync("error", elapsedSecondsSince(postgresStartedAt));
@@ -236,6 +238,8 @@ export class HookAPI {
             } finally {
               pgClient.release();
             }
+          } else {
+            console.log(`hook: pull event repo=${image} did not parse as a known provenance — skipping`);
           }
         } catch (err) {
           console.error('Error processing pull metadata:', err);

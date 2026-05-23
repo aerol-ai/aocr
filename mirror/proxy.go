@@ -112,8 +112,15 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, res Resol
 	digest, contentType, present, err := p.writer.HeadManifest(ctx, res.Storage, res.Reference)
 	if err == nil && present {
 		p.metrics.RecordHit(res.Upstream.Slug(), "manifests")
+		log.Printf("mirror: manifest cache HIT method=%s storage=%s ref=%s digest=%s — serving from writer (will fire pull notification)",
+			r.Method, res.Storage, res.Reference, digest)
 		p.streamManifestFromWriter(w, r, res, digest, contentType)
 		return
+	}
+	if err != nil {
+		log.Printf("mirror: manifest HEAD probe error storage=%s ref=%s: %v — treating as miss", res.Storage, res.Reference, err)
+	} else {
+		log.Printf("mirror: manifest cache MISS storage=%s ref=%s — fetching from upstream %s", res.Storage, res.Reference, res.Upstream.Slug())
 	}
 	p.metrics.RecordMiss(res.Upstream.Slug(), "manifests")
 
@@ -361,6 +368,8 @@ func (p *Proxy) streamManifestFromWriter(w http.ResponseWriter, r *http.Request,
 	}
 	req.Header.Set("Accept", manifestAcceptHeader)
 	p.writer.auth(req)
+	log.Printf("mirror: proxying %s to writer for storage=%s ref=%s — writer registry will emit pull event to hooks",
+		r.Method, res.Storage, res.Reference)
 	resp, err := p.writer.client.Do(req)
 	if err != nil {
 		p.metrics.RecordWriterError(res.Upstream.Slug())
