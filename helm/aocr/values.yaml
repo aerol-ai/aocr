@@ -34,9 +34,6 @@ auth:
   jwtPublicCertificate: ""
   # Deprecated alias for jwtPublicCertificate.
   jwtPublicKey: ""
-  pat:
-    token: ""
-    tokens: []
 
 # Registry Configuration
 registry:
