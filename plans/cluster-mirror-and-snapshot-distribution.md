@@ -258,6 +258,18 @@ upstream credentials again — it asks the auth service for a short-lived
 bearer for the proof window). If the proof has aged out, the mirror returns
 401 and Docker daemon re-runs the /v2/token handshake transparently.
 
+**Recreate-on-failover uses the same flow.** AerolVM already stores user
+upstream credentials as `RegistryAuthSealed` (AES-GCM-encrypted, replicated
+via Raft to every node — see `pkg/models/types.go`). When dead-owner
+reconciliation in `internal/cluster/dead_owner.go` recreates a sandbox on a
+different node, the new owner unseals the stored creds and runs them through
+the same `WrapUpstreamCreds` + `RewriteImageRefForMirror` flow that the
+original create used. The user is not asked to re-supply creds. Cleartext
+creds never leave the cluster boundary. The pre-existing failure mode
+"user's upstream creds were rotated between create and recreate → recreate
+fails" is preserved (a direct pull would fail too); F21 below removes that
+failure mode for `failover.policy: recreate` sandboxes.
+
 ### F18. Proof-of-access cache
 
 In-memory LRU cache inside the auth service:
@@ -324,6 +336,88 @@ ECR uses AWS SigV4 + `GetAuthorizationToken` and would pull the AWS SDK
 into the auth service. When added, ECR creds come in as
 `{accessKeyId, secretAccessKey, region, optional sessionToken}` and the
 adapter handles the auth-token fetch + 12h refresh internally.
+
+### F21. Auto-import on first private pull (recreate-safe)
+
+The motivation: a sandbox is created with
+`failover.policy: recreate` and a private image like
+`ghcr.io/private-org/foo:v1`. Three weeks later the origin node dies and
+the cluster tries to recreate. The user's ghcr PAT was rotated last week.
+The sealed creds replicated via Raft are now stale; the F17 wrap proof
+fails; recreate fails. The user wakes up to a broken sandbox they thought
+was failure-tolerant.
+
+The fix: on the *first* successful pull that satisfies all three of
+`failover.policy: recreate`, `registryAuth != nil`, and "image host matches
+an `AOCR_MIRROR_UPSTREAMS` entry", AerolVM kicks off an asynchronous
+**auto-import** to the cluster namespace:
+
+1.  The mirror has just cached every blob and manifest in S3 (the pull just
+    happened — the bytes are right there).
+2.  Sandboxd calls `POST /v1/internal/imports` on the AOCR hooks API with
+    `{ upstream_host, upstream_repo, upstream_digest, cluster_id }`.
+3.  The hooks service uses Distribution's mount-from-repo API to mount
+    every layer blob from `mirror/<host>/<repo>` into
+    `cluster/<cluster_id>/_imported/<host>/<repo>` and writes the manifest
+    under the same path with tag `<original_tag>--idle-90d`. Because the
+    blobs are already in S3, mount-from-repo returns 201 immediately
+    without any byte transfer. Cost is N + 1 small HTTP calls.
+4.  Sandboxd rewrites the sandbox row: `image.distribution.mode` flips from
+    `external_registry` to `aocr-imported`, with `RegistryRef` pointing at
+    `aocr.aerol.ai/cluster/<id>/_imported/ghcr.io/private-org/foo:v1--idle-90d`.
+    The user-visible `image` field still shows `ghcr.io/private-org/foo:v1`.
+5.  Sealed user creds are kept on disk (for audit + manual fallback) but
+    flagged `auto_imported: true` so the recreate path knows to use the
+    cluster PAT instead of trying the user's creds first.
+
+On recreate after the rotation:
+-   Owner-watcher reads the rewritten pull-ref.
+-   Pulls from `aocr.aerol.ai/cluster/<id>/_imported/...` with the cluster
+    PAT.
+-   No upstream auth involved. No user creds touched. Recreate succeeds.
+
+Gating and edge cases:
+
+-   **Opt-in by failover.** No auto-import for `failover.policy: none`
+    sandboxes. The user explicitly asked for failure-tolerance; that's the
+    consent for the cluster to own a copy of the bytes.
+-   **Idle TTL 90 days by default.** Auto-imported copies use
+    `--idle-90d`. If the sandbox is destroyed and no other sandbox uses the
+    same imported image, it ages out automatically. Configurable via
+    `AOCR_IMPORT_RETENTION_SUFFIX`.
+-   **Best-effort.** Auto-import failure does not fail the create call.
+    The sandbox boots normally; the sandbox row is annotated
+    `auto_import_pending: true`; a background retry picks it up. If retries
+    keep failing, recreate falls back to the F17 path with stored creds
+    (same behavior as today, just no improvement).
+-   **Multi-tenant safety.** The cluster PAT scope is
+    `cluster/<cluster_id>/*` (F3). All tenants share this namespace at the
+    AOCR level, which is acceptable because the gate is at AerolVM
+    sandboxd: only the sandbox owner can request a recreate, and sandboxd
+    looks up which `_imported/<host>/<repo>` path is associated with which
+    sandbox by reading its own store (not by trusting client input). A
+    rogue tenant cannot enumerate other tenants' imported images without
+    sandboxd-host access, which is already root-level access to all sealed
+    creds today.
+-   **Storage cost.** Effectively just manifest writes. Blobs are
+    content-addressed and stored once in S3 across all uses (proxied,
+    snapshot, imported). For 1 TB of unique images and ~100k sandboxes,
+    the manifest delta is sub-gigabyte.
+-   **Mid-roll for existing sandboxes.** Sandboxes created before F21 lands
+    do not have an imported copy. First failover attempt does a lazy
+    auto-import (try the F17 path; if it succeeds, *also* fire the
+    auto-import for next time; if it fails because of stale creds, surface
+    the original failure). This means existing sandboxes get progressively
+    upgraded as they're recreated.
+-   **Image update path.** If the user destroys and recreates the sandbox
+    with the same image string but the upstream digest has changed
+    (`latest` tag moved, for instance), the new pull triggers a new
+    auto-import for the new digest. The old imported manifest ages out via
+    idle TTL.
+
+This effectively converts "user upstream creds at pull time" into a
+proof-of-access ceremony whose result is captured in the cluster's own
+namespace. The user retains the original ref; the cluster owns the bytes.
 
 ### Snapshot of a privately-pulled base
 
@@ -535,6 +629,37 @@ via F5b.
     token exchange + one manifest HEAD + one blob GET per uncached layer.
     Proof cache hit ratio for this single pull is N-1 out of N requests.
 
+32. **Private-image sandbox recreated on failover succeeds without user
+    re-supplying creds.** User created the sandbox a week ago with
+    `registryAuth` for a private ghcr image and `failover.policy: recreate`.
+    Origin node dies. Dead-owner reconciliation on a different node reads
+    the sealed `RegistryAuthSealed`, unseals with the cluster sealing key,
+    runs the creds through `WrapUpstreamCreds`, rewrites the ref, and pulls
+    via the mirror. Sandbox is back online. The user is not asked for new
+    creds. Cleartext creds did not leave the cluster boundary.
+
+33. **Recreate succeeds even after user's upstream creds were revoked
+    (F21).** Same setup as 32, but the user rotated their ghcr PAT three
+    days ago. F21 auto-import had fired right after the original successful
+    pull, so the sandbox row's pull-ref already points at
+    `cluster/<id>/_imported/ghcr.io/private-org/foo:v1`. Recreate uses the
+    cluster PAT, not the now-stale user creds. Pull succeeds. The user
+    might never realize their PAT had expired.
+
+34. **Auto-import is best-effort and never blocks create.** AOCR is briefly
+    unreachable during the auto-import call right after a successful create.
+    The sandbox boots fine. Its row is flagged `auto_import_pending: true`.
+    A background retry runs every few minutes; once AOCR is back, the
+    import completes and the flag clears. If retries keep failing for >1h,
+    an alert fires but the sandbox keeps running on the origin node.
+
+35. **No auto-import for `failover.policy: none` sandboxes.** User creates
+    a private-image sandbox without opting into failover. No auto-import is
+    triggered. No cluster copy is made. If the origin node dies, the
+    sandbox is lost (consistent with `failover.policy: none` semantics).
+    The cluster does not "own" a copy of the image bytes the user did not
+    consent to.
+
 ## Files to modify, by repo
 
 ### AOCR (`/Users/sumansaurabh/Documents/startup-3/aocr.sh/`)
@@ -564,6 +689,8 @@ via F5b.
 | `hooks/src/util/tagRetention.ts` | No behavior change required for tag parsing; add an `inferredProvenance(repository)` helper used by HookAPI. |
 | `hooks/src/controllers/MirrorBlobAPI.ts` (new) | `GET /v1/internal/blobs/:digest` (F8). Reads from Postgres + does S3 HEAD; returns presence. Cluster-internal only (token-checked against `INTERNAL_API_TOKEN`). |
 | `hooks/src/controllers/SnapshotAPI.ts` (new) | `POST /v1/internal/snapshots`, `DELETE /v1/internal/snapshots/:id` (F9). Auth: cluster-class PAT or `INTERNAL_API_TOKEN`. |
+| `hooks/src/controllers/ImportAPI.ts` (new) | F21. `POST /v1/internal/imports` body `{upstream_host, upstream_repo, upstream_digest, cluster_id, target_tag_suffix}`. Resolves the source manifest under `mirror/<host>/<repo>@<digest>` and uses Distribution's blob mount-from-repo API to copy every layer reference into `cluster/<cluster_id>/_imported/<host>/<repo>:<tag>--idle-90d`. Writes the manifest. Idempotent on digest. Auth: cluster-class PAT. |
+| `hooks/src/util/mountFromRepo.ts` (new) | Helper that issues `POST /v2/<dst>/blobs/uploads/?mount=<digest>&from=<src>` for each layer. Returns the new manifest body to write. |
 | `hooks/src/server.ts` | Register new controllers. |
 | `hooks/src/router.ts` | Route additions. |
 | `registry/Dockerfile` | If we go with the in-process custom proxy (recommended), this needs to bake in the proxy module — see "Proxy implementation choice" below. Otherwise no change. |
@@ -616,6 +743,14 @@ predictable across upstreams. The custom proxy lives in a new top-level
 | `pkg/docker/upstream_wrap.go` (new) | F17 client side. `WrapUpstreamCreds(host, username, password) (identityToken string, err error)`: AES-GCM-256 encrypts `{host, username, password, issuedAt}` with the wrap key loaded from `/etc/aerolvm/upstream-wrap.key`. Returns the base64url-encoded blob to put in `X-Registry-Auth`. |
 | `pkg/docker/upstream_wrap_test.go` (new) | Round-trip test against a fake AOCR unwrap routine; expired-timestamp rejection; clear error when key file missing. |
 | `pkg/secrets/wrap_key_loader.go` (new) | Loads `/etc/aerolvm/upstream-wrap.key`, supports the same comma-separated rotation list as the AOCR side, exposes the active key. File mode check (0400) at load time; refuses to start if world-readable. |
+| `internal/service/auto_import.go` (new) | F21. `AutoImportAfterPull(ctx, sandbox)` runs after a successful create when `failover.policy == recreate` && `registryAuth != nil` && image host is in mirror upstreams. Resolves the digest via Docker daemon inspect, calls AOCR `POST /v1/internal/imports` with cluster PAT, rewrites the sandbox row's `image.distribution.mode` to `aocr-imported` and stores the cluster-owned pull-ref. Failure → flag `auto_import_pending: true` and let a background reconciler retry. |
+| `internal/service/auto_import_retry.go` (new) | Background goroutine that walks sandboxes with `auto_import_pending: true` every N minutes (default 5) and re-runs `AutoImportAfterPull`. Bounded concurrency (cap 4 simultaneous imports). Exponential backoff on per-sandbox retry. Alert metric for >1h-pending sandboxes. |
+| `internal/service/auto_import_test.go` (new) | Tests for gating (no recreate → no import), idempotency (re-run on same digest is a no-op), failure-fallback (AOCR down → flag set, sandbox unaffected), and recreate-uses-imported-ref-after-success. |
+| `internal/cluster/dead_owner.go` | Read the rewritten pull-ref when `image.distribution.mode == aocr-imported` — pull via cluster PAT, no wrap-creds path. |
+| `internal/cluster/owner_watcher.go` | Same. Treat `aocr-imported` like `aocr` for placement decisions (cross-node-pullable, no local pin). |
+| `pkg/models/types.go` | New `ImageDistributionMode` constant `aocr-imported`. New optional field `RegistryAuthSealed.AutoImported bool` so the recreate path knows whether to use the cluster PAT (true) or attempt wrapping the stored user creds (false). |
+| `internal/store/store.go` | New column `auto_import_pending BOOLEAN NOT NULL DEFAULT FALSE` on the sandbox table, plus an index for the reconciler scan. Co-located test in `store_test.go`. |
+| `internal/config/config.go` (additions) | `AOCR_IMPORT_RETENTION_SUFFIX` (default `--idle-90d`), `AOCR_IMPORT_RETRY_INTERVAL_SECONDS` (default `300`), `AOCR_IMPORT_MAX_CONCURRENT` (default `4`). |
 | `internal/service/service.go` | When persisting a created sandbox, store both `image` (the user-supplied ref) and the rewritten pull-ref in trace/log fields only — the wire DTO continues to show the original ref. |
 | `internal/config/config.go` | Add `AOCR_MIRROR_UPSTREAMS` (comma-separated `host=shortname` pairs, e.g. `ghcr.io=ghcr,gcr.io=gcr,quay.io=quay,registry.k8s.io=k8s`). Validated at startup; logged once on boot. |
 | `pkg/models/types.go` | `RegistryRef` field on `ImageDistributionMetadata` extended with `Pushed bool` + `PushedAt time.Time`. No DTO shape break. |
@@ -740,9 +875,21 @@ PR 4d — Sandboxd wiring + end-to-end test
     on a real cluster. Same image pulled on a second node serves from S3
     with a fresh proof. Wrong creds return 401 cleanly. Revoked creds lock
     out within 15min.
+-   Sealed-creds round-trip: cluster recreate after origin-node loss reads
+    `RegistryAuthSealed` from Raft FSM, unseals, wraps, pulls. Verified
+    end-to-end against a 3-node test cluster.
 
-Ship → private images get the full mirror benefit. The majority user case
-works.
+PR 4e — Auto-import on first private pull (F21)
+-   AOCR `ImportAPI.ts` + `mountFromRepo.ts`.
+-   AerolVM `auto_import.go` + retry reconciler + sandbox-row column +
+    cluster-watcher integration.
+-   Tests: gating, idempotency, failure-fallback, recreate-after-cred-
+    rotation succeeds.
+-   Documentation: add to `AUTHENTICATED_MIRROR.md` operator section.
+
+Ship → private images get the full mirror benefit AND survive user
+credential rotation across failover. The majority user case works
+end-to-end including unplanned node loss.
 
 ### Phase 5 — Image-locality affinity (optional, deferred)
 -   SWIM heartbeat extension (bounded top-K).
@@ -791,6 +938,9 @@ Ship → first-pull cost drops; warm nodes preferred but not required.
 | Upstream auth flow ddos from misconfigured users → AOCR hammers ghcr token endpoint. | Proof cache (F18) keys on `sha256(creds)` so repeated identical pulls collapse to one upstream handshake per 5 min. Per-upstream concurrency limit on the adapter. Alert on probe error-rate spike. |
 | Wrap key rotation gone wrong → all pulls fail. | Auth service accepts BOTH current and previous keys for the 24h overlap window. Ansible playbook deploys to AOCR side first, then sandboxd side. Smoke-test pull after each side. Old key only dropped after monitoring window. |
 | User changes their upstream password mid-pull → some layers succeed with cached upstream bearer, later layers 401. | Acceptable behavior: pull fails, user retries with new creds, fresh proof, fresh pull. The proof cache holds the upstream bearer for ≤5 min, so the inconsistency window is short. |
+| Stored user creds go stale between create and recreate → recreate fails. | F21 auto-import fires right after the first successful private pull (when `failover.policy: recreate` is set). Subsequent recreates pull from `cluster/<id>/_imported/...` with the cluster PAT and do not touch the user's stored creds. The failure mode only persists for sandboxes that did NOT opt into failover, which is consistent with `failover.policy: none` semantics. |
+| Auto-import (F21) populates `cluster/<id>/_imported/...` with bytes the cluster has no long-term license for. | Auto-import is gated on `failover.policy: recreate` + `registryAuth != nil` — explicit user opt-in. Imported copies use `--idle-90d` so unused copies age out. Operators can shorten via `AOCR_IMPORT_RETENTION_SUFFIX`. Document in `AUTHENTICATED_MIRROR.md` that opting into recreate-failover implies the cluster will hold a copy of the pulled image for up to 90 days of idle. |
+| Sandbox stuck in `auto_import_pending: true` indefinitely (AOCR persistently unreachable). | Reconciler emits a metric; alert when any sandbox stays pending >1h. Sandbox itself is unaffected — it just doesn't have the recreate-survives-cred-rotation property until import completes. |
 
 ## Open questions for next round
 
@@ -825,3 +975,16 @@ Ship → first-pull cost drops; warm nodes preferred but not required.
     message (proposed) or fall back to direct upstream pull just for that
     request (faster ship of usable cache for private images, at the cost of
     a behavior change between phases)? I lean 401 — predictable.
+12. F21 auto-import default retention: **90 days idle** proposed.
+    Alternatives: 30 days (smaller storage footprint, but more risk of
+    recreate finding the imported copy gone) or 365 days (long-lived
+    coverage at the cost of S3 bytes for unused imports). Confirm or
+    override.
+13. F21 reconciler interval: **5 minutes** proposed for retry of failed
+    imports. Trade-off is responsiveness to AOCR coming back vs. retry
+    storm. Confirm or override.
+14. F21 default-on or default-off? Proposed: default-on whenever
+    `failover.policy: recreate` is set (consent inferred from the failover
+    opt-in). Alternative: explicit `auto_import: true` flag on the create
+    request. I lean inferred — fewer knobs, the consent is implicit in
+    "make this survive failure."
