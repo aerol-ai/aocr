@@ -118,6 +118,20 @@
         KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
       changed_when: true
 
+    - name: Force rollout restart of all deployments to pick up :latest images
+      ansible.builtin.command:
+        cmd: "kubectl -n {{ aocr_namespace }} rollout restart deployment"
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      changed_when: true
+
+    - name: Wait for deployments to finish rolling out
+      ansible.builtin.command:
+        cmd: "kubectl -n {{ aocr_namespace }} rollout status deployment --timeout=300s"
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      changed_when: false
+
     - name: Verify Helm Release Status
       ansible.builtin.command:
         cmd: "helm status {{ aocr_helm_release_name }} -n {{ aocr_namespace }}"
