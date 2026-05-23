@@ -189,6 +189,21 @@ describe("ImportAPI", () => {
     assert.equal(out.error, "unauthorized");
   });
 
+  it("rejects with 401 on an unknown auth scheme", async () => {
+    const res = fakeRes();
+    const out = await controller().importImage(res.r, "Basic test-internal-token", validBody());
+    assert.equal(res.code, 401);
+    assert.equal(out.error, "unauthorized");
+  });
+
+  it("accepts Bearer scheme (sandbox-library auto-import client form)", async () => {
+    state.current.dstTagDigests.set(`cluster/cluster-abc/_imported/ghcr.io/aerol-ai/sandbox:v1.2.3--idle-90d`, DIGEST_A);
+    const res = fakeRes();
+    const out = await controller().importImage(res.r, "Bearer test-internal-token", validBody());
+    assert.equal(res.code, 200);
+    assert.equal(out.already_present, true);
+  });
+
   it("rejects with 400 on invalid upstream_digest", async () => {
     const res = fakeRes();
     const out = await controller().importImage(res.r, "Token test-internal-token", validBody({ upstream_digest: "not-a-digest" }));

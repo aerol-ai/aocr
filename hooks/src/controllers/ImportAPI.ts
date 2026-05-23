@@ -57,8 +57,25 @@ type Validated = {
 
 function authorized(authorization: string | undefined): boolean {
   const expected = process.env["INTERNAL_API_TOKEN"];
-  if (!expected) return false;
-  return authorization === `Token ${expected}`;
+  if (!expected || !authorization) return false;
+  // Accept both `Bearer <token>` (preferred, what sandbox-library sends) and
+  // the legacy `Token <token>` form so any pre-existing internal caller keeps
+  // working. Constant-time compare prevents timing-leaking the expected value.
+  const space = authorization.indexOf(" ");
+  if (space <= 0) return false;
+  const scheme = authorization.slice(0, space);
+  const presented = authorization.slice(space + 1);
+  if (scheme !== "Bearer" && scheme !== "Token") return false;
+  return constantTimeEquals(presented, expected);
+}
+
+function constantTimeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 function isValidRepoPath(repo: string): boolean {

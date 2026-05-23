@@ -47,6 +47,10 @@ jobs:
             image: aocr-web
             context: ./web
             dockerfile: ./web/Dockerfile
+          - name: mirror
+            image: aocr-mirror
+            context: ./mirror
+            dockerfile: ./mirror/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v6

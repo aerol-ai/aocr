@@ -131,6 +131,10 @@ services:
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
       - AUTH_PAT_TOKEN=${AUTH_PAT_TOKEN:-}
       - AUTH_PAT_TOKENS=${AUTH_PAT_TOKENS:-}
+      # Wrap-key ring for sandbox-side aocrwrap: tokens (Phase 4 / F17).
+      # Comma-separated base64-32-byte keys; first is the active sealing key,
+      # rest are accepted for unwrap during rotation. Empty disables wrap-auth.
+      - UPSTREAM_AUTH_WRAP_KEYS=${UPSTREAM_AUTH_WRAP_KEYS:-}
     ports:
       - "8080:8080"
     depends_on:
