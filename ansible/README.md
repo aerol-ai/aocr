@@ -11,7 +11,7 @@ This Ansible playbook automates the deployment and upgrading of the AOCR Helm ch
 
 ## Prerequisites
 
-1. **SSH Access**: You must have SSH access to the target VM (`ubuntu@34.230.16.251`). The playbook connects via your default SSH key configuration.
+1. **SSH Access**: You must have SSH access to the target VM (`ubuntu@<your-vm-ip>`). The playbook connects via your default SSH key configuration.
 2. **AWS Credentials**: The AOCR registry requires standard AWS credentials for S3. You must have an AWS profile configured in your `~/.aws/credentials` file.
 3. **Ansible & Helm**: Ansible must be installed on your local machine. Helm must be installed on the remote VM.
 
@@ -19,7 +19,13 @@ This Ansible playbook automates the deployment and upgrading of the AOCR Helm ch
 
 All configuration is safely isolated:
 
-### 1. Environment Configuration (`vars.yml`)
+### 1. Inventory Configuration (`hosts.yml`)
+The target VM IP is private and ignored by git.
+1. Copy the example file:
+   `cp inventory/hosts.yml.example inventory/hosts.yml`
+2. Open `hosts.yml` and replace `<your-vm-ip>` with your actual VM IP.
+
+### 2. Environment Configuration (`vars.yml`)
 Since infrastructure configuration (like domain routing and bucket names) is considered sensitive/private in this project, it is ignored by git. 
 
 To set it up:

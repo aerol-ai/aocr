@@ -1,5 +1,5 @@
 all:
   hosts:
-    34.230.16.251:
+    <your-vm-ip>:
       ansible_user: ubuntu
       # If you use a different private key, update it here or rely on ssh-agent.
