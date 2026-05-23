@@ -1,5 +1,5 @@
 import "source-map-support/register";
-import * as cors from "cors";
+import cors from "cors";
 import {ServerLoader, ServerSettings} from "ts-express-decorators";
 import {$log} from "ts-log-debug";
 import Path = require("path");
