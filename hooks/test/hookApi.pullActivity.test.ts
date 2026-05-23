@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 process.env["DATABASE_URL"] = process.env["DATABASE_URL"] || "postgres://test:test@127.0.0.1:5432/test";
 
-import { DELETE_MANIFEST_SQL, UPDATE_LAST_PULLED_AT_SQL } from "../src/controllers/HookAPI";
+import { DELETE_MANIFEST_SQL, UPDATE_LAST_PULLED_AT_SQL, isManifestPullMediaType } from "../src/controllers/HookAPI";
 
 describe("UPDATE_LAST_PULLED_AT_SQL", () => {
   it("updates last_pulled_at", () => {
@@ -28,6 +28,43 @@ describe("UPDATE_LAST_PULLED_AT_SQL", () => {
   it("debounces writes with a one-hour guard so popular tags do not write-storm", () => {
     assert.match(UPDATE_LAST_PULLED_AT_SQL, /last_pulled_at\s+IS\s+NULL/i);
     assert.match(UPDATE_LAST_PULLED_AT_SQL, /INTERVAL\s+'1 hour'/i);
+  });
+});
+
+describe("isManifestPullMediaType", () => {
+  it("accepts Docker schema v1 and v2 manifest types", () => {
+    assert.equal(isManifestPullMediaType("application/vnd.docker.distribution.manifest.v1+json"), true);
+    assert.equal(isManifestPullMediaType("application/vnd.docker.distribution.manifest.v2+json"), true);
+  });
+
+  it("accepts Docker schema v2 manifest list", () => {
+    assert.equal(isManifestPullMediaType("application/vnd.docker.distribution.manifest.list.v2+json"), true);
+  });
+
+  it("accepts OCI image manifest", () => {
+    assert.equal(isManifestPullMediaType("application/vnd.oci.image.manifest.v1+json"), true);
+  });
+
+  it("accepts OCI image index (multi-arch) — regression for multi-arch pulls not updating last_pulled_at", () => {
+    // The OCI spec renamed manifest-list to image.index. The literal "manifest"
+    // does not appear in the media type, so the old `mediaType.includes("manifest")`
+    // filter dropped every multi-arch pull event. Confirmed in production logs
+    // for `docker pull mirror/docker/library/rust:slim-trixie`.
+    assert.equal(isManifestPullMediaType("application/vnd.oci.image.index.v1+json"), true);
+  });
+
+  it("rejects blob and unrelated media types", () => {
+    assert.equal(isManifestPullMediaType("application/octet-stream"), false);
+    assert.equal(isManifestPullMediaType("application/json"), false);
+    assert.equal(isManifestPullMediaType("text/plain"), false);
+  });
+
+  it("rejects empty, null, undefined, and non-string inputs", () => {
+    assert.equal(isManifestPullMediaType(""), false);
+    assert.equal(isManifestPullMediaType(null), false);
+    assert.equal(isManifestPullMediaType(undefined), false);
+    assert.equal(isManifestPullMediaType(42), false);
+    assert.equal(isManifestPullMediaType({}), false);
   });
 });
 

@@ -62,6 +62,20 @@ export const DELETE_MANIFEST_SQL = `
     AND i.manifest_digest = $3
 `;
 
+// A pull event counts as "the user pulled this tag" only when the mediaType is a
+// manifest-class media type (so we ignore blob GETs, which also fire pull events).
+// Docker schema v1/v2 and OCI image manifest all contain the literal "manifest",
+// but the OCI spec renamed manifest-list -> image.index — application/vnd.oci.image.index.v1+json
+// does NOT contain "manifest". A multi-arch docker pull (e.g. rust:slim-trixie)
+// starts with HEAD/GET on the image.index; if that's filtered out, multi-arch
+// pulls never update last_pulled_at and the row looks like it was never pulled.
+export function isManifestPullMediaType(mediaType: unknown): boolean {
+  if (typeof mediaType !== "string" || mediaType.length === 0) {
+    return false;
+  }
+  return mediaType.includes("manifest") || mediaType.includes("image.index");
+}
+
 @Controller("/v1/hook")
 export class HookAPI {
   /**
@@ -217,8 +231,8 @@ export class HookAPI {
         const tag = event.target.tag;
         const mediaType = event.target.mediaType;
 
-        if (!image || !tag || !mediaType || !mediaType.includes("manifest")) {
-          console.log(`hook: pull event skipped repo=${image} tag=${tag} mediaType=${mediaType} (missing tag, repo, or non-manifest mediaType — blob pulls and digest-only pulls do not fire last_pulled_at updates)`);
+        if (!image || !tag || !isManifestPullMediaType(mediaType)) {
+          console.log(`hook: pull event skipped repo=${image} tag=${tag} mediaType=${mediaType} (missing tag, repo, or non-manifest-class mediaType — blob pulls and digest-only pulls do not fire last_pulled_at updates)`);
           continue;
         }
 
