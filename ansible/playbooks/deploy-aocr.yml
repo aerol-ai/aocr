@@ -77,6 +77,27 @@
         final_hooks_token: "{{ aocr_hooks_token | default(lookup('password', playbook_dir + '/../../secrets/hooks_token length=64 chars=ascii_letters,digits'), true) }}"
         final_registry_replregSecret: "{{ aocr_registry_replregSecret | default(lookup('password', playbook_dir + '/../../secrets/registry_secret length=64 chars=ascii_letters,digits'), true) }}"
         final_auth_pat_token: "{{ aocr_auth_pat_token | default(lookup('password', playbook_dir + '/../../secrets/auth_pat_token length=64 chars=ascii_letters,digits'), true) }}"
+        final_internal_api_token: "{{ aocr_internal_api_token | default(lookup('password', playbook_dir + '/../../secrets/internal_api_token length=64 chars=ascii_letters,digits'), true) }}"
+        final_mirror_writer_password: "{{ aocr_mirror_writer_password | default(lookup('password', playbook_dir + '/../../secrets/mirror_writer_password length=32 chars=ascii_letters,digits'), true) }}"
+
+    - name: Generate upstream wrap key if not provided
+      delegate_to: localhost
+      when: aocr_auth_upstream_wrap_key is not defined or (aocr_auth_upstream_wrap_key | length) == 0
+      ansible.builtin.shell:
+        cmd: "head -c 32 /dev/urandom | base64 > {{ playbook_dir }}/../../secrets/upstream_wrap_key"
+        creates: "{{ playbook_dir }}/../../secrets/upstream_wrap_key"
+
+    - name: Load upstream wrap key from disk
+      delegate_to: localhost
+      ansible.builtin.slurp:
+        src: "{{ playbook_dir }}/../../secrets/upstream_wrap_key"
+      register: upstream_wrap_key_file
+      when: aocr_auth_upstream_wrap_key is not defined or (aocr_auth_upstream_wrap_key | length) == 0
+
+    - name: Pin final upstream wrap key
+      delegate_to: localhost
+      ansible.builtin.set_fact:
+        final_upstream_wrap_key: "{{ aocr_auth_upstream_wrap_key | default((upstream_wrap_key_file.content | b64decode | trim), true) }}"
 
   tasks:
     - name: Create secrets directory on the remote VM
@@ -116,6 +137,14 @@
           --set-string auth.pat.token="{{ final_auth_pat_token }}"
           --set-file auth.jwtPrivateKey="/home/ubuntu/aocr-secrets/jwt-private.pem"
           --set-file auth.jwtPublicCertificate="/home/ubuntu/aocr-secrets/jwt-public.crt"
+          --set-string hooks.internalApiToken="{{ final_internal_api_token }}"
+          --set-string auth.upstreamAuth.wrapKey="{{ final_upstream_wrap_key }}"
+          --set mirror.enabled={{ aocr_mirror_enabled | default(false) | bool | string | lower }}
+          {% if aocr_mirror_enabled | default(false) | bool %}
+          --set mirror.host="{{ aocr_mirror_host | default('mirror.' + aocr_global_domain) }}"
+          --set-string mirror.writerPassword="{{ final_mirror_writer_password }}"
+          --set mirror.allowList="{{ aocr_mirror_allow_list | default('0.0.0.0/0') }}"
+          {% endif %}
       environment:
         KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
       changed_when: true

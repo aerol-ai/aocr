@@ -1,0 +1,45 @@
+{{- if and .Values.mirror.enabled .Values.ingress.enabled }}
+{{- $mirrorHost := default (printf "mirror.%s" .Values.global.domain) .Values.mirror.host -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "aocr.fullname" . }}-mirror-ingress
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    {{ .Values.mirror.ingressAllowListAnnotation }}: {{ join "," .Values.mirror.allowList | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ $mirrorHost }}
+    secretName: {{ include "aocr.fullname" . }}-mirror-tls
+  {{- end }}
+  rules:
+  - host: {{ $mirrorHost }}
+    http:
+      paths:
+      - path: /v2/
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-mirror
+            port:
+              number: {{ .Values.mirror.port }}
+      - path: /v2
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-mirror
+            port:
+              number: {{ .Values.mirror.port }}
+      - path: /healthz
+        pathType: Exact
+        backend:
+          service:
+            name: {{ include "aocr.fullname" . }}-mirror
+            port:
+              number: {{ .Values.mirror.port }}
+{{- end }}

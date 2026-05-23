@@ -27,3 +27,18 @@ aocr_jwt_public_certificate_path: "{{ playbook_dir }}/../../secrets/jwt-public.c
 #   microk8s: /var/snap/microk8s/current/credentials/client.config
 #   kubeadm:  /etc/kubernetes/admin.conf
 aocr_remote_kubeconfig: "/etc/rancher/k3s/k3s.yaml"
+
+# --- Phase 4: Authenticated Mirror + Auto-Import (F17-F21) -------------------
+# Enable the mirror reverse-proxy deployment. When false (default), the
+# wrap-auth + auto-import features are templated but the mirror vhost itself
+# is not deployed — safe baseline. Flip to true to roll out the full stack.
+aocr_mirror_enabled: false
+
+# Mirror vhost. Defaults to mirror.<aocr_global_domain> when unset. Override
+# only if you want a custom hostname (must have a matching DNS record).
+# aocr_mirror_host: "mirror.example.com"
+
+# Upstream registries the mirror will accept and pull-through-cache from.
+# Comma-separated list of hostnames. Anything not on this list 404s at the
+# mirror — keeps the cache surface scoped.
+aocr_mirror_allow_list: "ghcr.io,gcr.io,quay.io,registry.k8s.io,docker.io"

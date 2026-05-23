@@ -4,6 +4,18 @@ import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import crypto from 'crypto';
 import {
+  ClusterPatEntry,
+  evaluateClusterPatScope,
+  parseClusterPatEntries,
+} from './clusterPat';
+import { WrapKeyRing, parseWrapKeyRing } from './upstreamAuth/wrap';
+import { ProofCache } from './upstreamAuth/proofCache';
+import {
+  WRAPPED_UPSTREAM_TOKEN_TTL_SECONDS,
+  isWrappedUpstreamToken,
+  validateWrappedUpstream,
+} from './upstreamAuth/strategy';
+import {
   bindMetricsPool,
   elapsedSecondsSince,
   mountMetrics,
@@ -11,6 +23,7 @@ import {
   recordTokenIssuance,
   recordTokenValidation,
   recordUpstreamValidation,
+  setConfiguredClusterPatCount,
   setConfiguredPatCount,
 } from './metrics';
 
@@ -68,11 +81,14 @@ bindMetricsPool(pool);
 const VALIDATION_SERVICE_URL = process.env.VALIDATION_SERVICE_URL;
 const AUTH_PAT_TOKEN = process.env.AUTH_PAT_TOKEN;
 const AUTH_PAT_TOKENS = process.env.AUTH_PAT_TOKENS;
+const AUTH_CLUSTER_PAT_TOKENS = process.env.AUTH_CLUSTER_PAT_TOKENS;
 const JWT_PRIVATE_KEY = process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n');
 const ISSUER = 'aocr-auth';
 const DEFAULT_REGISTRY_SERVICE = process.env.REGISTRY_SERVICE || 'aocr';
 const STATIC_PAT_SUBJECT = 'static-pat';
 const STATIC_PAT_PROVIDER = 'static-pat';
+const CLUSTER_PAT_PROVIDER = 'cluster-pat';
+const WRAPPED_UPSTREAM_PROVIDER = 'wrapped-upstream';
 
 app.use(express.json());
 mountMetrics(app);
@@ -92,9 +108,18 @@ interface StaticPatConfig {
   userProfile: ValidationUserProfile;
 }
 
+interface ClusterPatConfig {
+  entries: ClusterPatEntry[];
+}
+
 interface ValidationResult {
-  strategy: 'api' | 'pat';
+  strategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream';
   userProfile: ValidationUserProfile;
+  clusterId?: string;
+  // Present only when strategy === 'wrapped-upstream'. Identifies the
+  // upstream creds without exposing them — used as the JWT sub and for
+  // metrics correlation. The auth service NEVER logs the cleartext creds.
+  credIdentity?: string;
 }
 
 function parseStaticPatTokens(...rawValues: Array<string | undefined>): string[] {
@@ -148,6 +173,97 @@ function getStaticPatConfig(): StaticPatConfig | null {
 
 const STATIC_PAT_CONFIG = getStaticPatConfig();
 setConfiguredPatCount(STATIC_PAT_CONFIG?.tokens.length || 0);
+
+function getClusterPatConfig(): ClusterPatConfig | null {
+  const entries = parseClusterPatEntries(AUTH_CLUSTER_PAT_TOKENS);
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return { entries };
+}
+
+const CLUSTER_PAT_CONFIG = getClusterPatConfig();
+setConfiguredClusterPatCount(CLUSTER_PAT_CONFIG?.entries.length || 0);
+
+// F19 / F18: wrap key ring + proof cache. Both are absent (effectively
+// disabled) when UPSTREAM_AUTH_WRAP_KEYS is empty or unset; the auth
+// service then rejects any aocrwrap:* token with a clear error rather than
+// silently falling through to the API validator (which would 401 anyway,
+// but with a misleading reason).
+const UPSTREAM_AUTH_WRAP_KEY_RING: WrapKeyRing = parseWrapKeyRing(process.env.UPSTREAM_AUTH_WRAP_KEYS);
+const UPSTREAM_PROOF_CACHE = new ProofCache();
+
+function buildClusterPatProfile(clusterId: string): ValidationUserProfile {
+  const subject = `cluster:${clusterId}`;
+  return {
+    externalId: subject,
+    username: null,
+    email: null,
+    displayName: subject,
+    avatarUrl: null,
+    authProvider: CLUSTER_PAT_PROVIDER,
+    rawProfile: {
+      source: CLUSTER_PAT_PROVIDER,
+      user: { id: subject },
+      authProvider: CLUSTER_PAT_PROVIDER,
+      clusterId,
+    },
+  };
+}
+
+function buildWrappedUpstreamProfile(identity: string): ValidationUserProfile {
+  // Short, log-safe identifier — never the full sha256, and never the host
+  // or username from the envelope. The full identity stays inside the proof
+  // cache only.
+  const subject = `wrapped:${identity.slice(0, 16)}`;
+  return {
+    externalId: subject,
+    username: null,
+    email: null,
+    displayName: subject,
+    avatarUrl: null,
+    authProvider: WRAPPED_UPSTREAM_PROVIDER,
+    rawProfile: {
+      source: WRAPPED_UPSTREAM_PROVIDER,
+      user: { id: subject },
+      authProvider: WRAPPED_UPSTREAM_PROVIDER,
+    },
+  };
+}
+
+async function validateUsingWrappedUpstream(
+  presentedToken: string,
+  scope: unknown,
+): Promise<ValidationResult> {
+  const outcome = await validateWrappedUpstream(presentedToken, scope, {
+    keyRing: UPSTREAM_AUTH_WRAP_KEY_RING,
+    proofCache: UPSTREAM_PROOF_CACHE,
+  });
+  return {
+    strategy: 'wrapped-upstream',
+    userProfile: buildWrappedUpstreamProfile(outcome.identity),
+    credIdentity: outcome.identity,
+  };
+}
+
+function validateUsingClusterPat(validationToken: string): ValidationResult | null {
+  if (!CLUSTER_PAT_CONFIG) {
+    return null;
+  }
+
+  for (const entry of CLUSTER_PAT_CONFIG.entries) {
+    if (tokensMatch(entry.token, validationToken)) {
+      return {
+        strategy: 'cluster-pat',
+        userProfile: buildClusterPatProfile(entry.clusterId),
+        clusterId: entry.clusterId,
+      };
+    }
+  }
+
+  return null;
+}
 
 function getValidationInfoUrl(): string {
   if (!VALIDATION_SERVICE_URL) {
@@ -265,7 +381,19 @@ async function validateUsingApi(validationToken: string): Promise<ValidationResu
   }
 }
 
-async function validatePresentedToken(validationToken: string): Promise<ValidationResult> {
+async function validatePresentedToken(validationToken: string, scope: unknown): Promise<ValidationResult> {
+  if (isWrappedUpstreamToken(validationToken)) {
+    const startedAt = process.hrtime.bigint();
+    try {
+      const wrappedResult = await validateUsingWrappedUpstream(validationToken, scope);
+      recordTokenValidation('wrapped-upstream', 'success', elapsedSecondsSince(startedAt));
+      return wrappedResult;
+    } catch (error) {
+      recordTokenValidation('wrapped-upstream', 'error', elapsedSecondsSince(startedAt));
+      throw error;
+    }
+  }
+
   if (STATIC_PAT_CONFIG) {
     const startedAt = process.hrtime.bigint();
     const staticPatResult = validateUsingStaticPat(validationToken);
@@ -275,6 +403,17 @@ async function validatePresentedToken(validationToken: string): Promise<Validati
     }
 
     recordTokenValidation('pat', 'miss', elapsedSecondsSince(startedAt));
+  }
+
+  if (CLUSTER_PAT_CONFIG) {
+    const startedAt = process.hrtime.bigint();
+    const clusterPatResult = validateUsingClusterPat(validationToken);
+    if (clusterPatResult) {
+      recordTokenValidation('cluster-pat', 'success', elapsedSecondsSince(startedAt));
+      return clusterPatResult;
+    }
+
+    recordTokenValidation('cluster-pat', 'miss', elapsedSecondsSince(startedAt));
   }
 
   if (VALIDATION_SERVICE_URL) {
@@ -290,8 +429,8 @@ async function validatePresentedToken(validationToken: string): Promise<Validati
     }
   }
 
-  if (STATIC_PAT_CONFIG) {
-    throw new Error('Invalid static PAT token');
+  if (STATIC_PAT_CONFIG || CLUSTER_PAT_CONFIG) {
+    throw new Error('Invalid PAT token');
   }
 
   throw new Error('No validation method configured');
@@ -321,13 +460,13 @@ function presentedIdentityMatchesUser(presentedIdentity: string | null, account:
 app.get('/v2/token', async (req, res) => {
   const { account, service, scope } = req.query;
   const authHeader = req.headers.authorization;
-  let validationStrategy: 'api' | 'pat' | 'unknown' = 'unknown';
+  let validationStrategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream' | 'unknown' = 'unknown';
 
   try {
     const { validationToken, presentedIdentity } = extractPresentedCredentials(authHeader);
 
     // 1. Validate with the static PAT fast-path first, then fall back to the API validator.
-    const validationResult = await validatePresentedToken(validationToken);
+    const validationResult = await validatePresentedToken(validationToken, scope);
     validationStrategy = validationResult.strategy;
     const userProfile = validationResult.userProfile;
     if (validationResult.strategy === 'api' && !presentedIdentityMatchesUser(presentedIdentity, account, userProfile)) {
@@ -396,20 +535,40 @@ app.get('/v2/token', async (req, res) => {
     // 3. Issue Docker-compatible JWT
     const access = [];
     if (scope) {
-      const [type, name, actions] = (scope as string).split(':');
+      const [type, name, actionsStr] = (scope as string).split(':');
+      const requestedActions = (actionsStr || '').split(',').filter((action) => action.length > 0);
+      let permittedActions = requestedActions;
+
+      if (validationResult.strategy === 'cluster-pat') {
+        if (!validationResult.clusterId) {
+          recordTokenIssuance('cluster-pat', 'error');
+          return res.status(401).json({ error: 'cluster PAT missing cluster_id' });
+        }
+
+        const decision = evaluateClusterPatScope(validationResult.clusterId, type, name, requestedActions);
+        if (!decision.allowed) {
+          recordTokenIssuance('cluster-pat', 'forbidden');
+          return res.status(401).json({ error: decision.reason || 'cluster PAT scope rejected' });
+        }
+        permittedActions = decision.allowedActions;
+      }
+
       access.push({
         type,
         name,
-        actions: actions.split(',')
+        actions: permittedActions,
       });
     }
 
+    const ttlSeconds = validationResult.strategy === 'wrapped-upstream'
+      ? WRAPPED_UPSTREAM_TOKEN_TTL_SECONDS
+      : 3600;
     const payload = {
       iss: ISSUER,
       sub: userProfile.externalId,
       aud: typeof service === 'string' && service ? service : DEFAULT_REGISTRY_SERVICE,
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      exp: Math.floor(Date.now() / 1000) + ttlSeconds,
       access,
       context: {
         external_id: userProfile.externalId,
@@ -435,7 +594,7 @@ app.get('/v2/token', async (req, res) => {
 
     res.json({
       token: signedToken,
-      expires_in: 3600,
+      expires_in: ttlSeconds,
       issued_at: new Date().toISOString()
     });
     recordTokenIssuance(validationStrategy, 'success');

@@ -128,7 +128,7 @@ export function elapsedSecondsSince(startNs: bigint): number {
   return Number(process.hrtime.bigint() - startNs) / 1_000_000_000;
 }
 
-export function recordTokenValidation(strategy: 'api' | 'pat', outcome: string, durationSeconds: number): void {
+export function recordTokenValidation(strategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream', outcome: string, durationSeconds: number): void {
   if (!metricsEnabled) {
     return;
   }
@@ -153,12 +153,26 @@ export function recordDatabaseSync(outcome: string, durationSeconds: number): vo
   databaseSyncDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
-export function recordTokenIssuance(strategy: 'api' | 'pat' | 'unknown', outcome: string): void {
+export function recordTokenIssuance(strategy: 'api' | 'pat' | 'cluster-pat' | 'wrapped-upstream' | 'unknown', outcome: string): void {
   if (!metricsEnabled) {
     return;
   }
 
   tokenIssuanceTotal.inc({ strategy, outcome });
+}
+
+const configuredClusterPatCount = new Gauge({
+  name: 'aocr_auth_configured_cluster_pat_count',
+  help: 'Number of configured cluster-class PATs (one per AerolVM cluster) available to the auth service.',
+  registers: [metricsRegistry],
+});
+
+export function setConfiguredClusterPatCount(count: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
+  configuredClusterPatCount.set(count);
 }
 
 export function mountMetrics(app: express.Application): void {

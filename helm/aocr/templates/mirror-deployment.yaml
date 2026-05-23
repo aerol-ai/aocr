@@ -1,0 +1,113 @@
+{{- if .Values.mirror.enabled }}
+{{- $mirrorImageRepo := default .Values.image.repository .Values.mirror.image.repository -}}
+{{- $mirrorImageTag := default .Values.image.tag .Values.mirror.image.tag -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aocr.fullname" . }}-mirror
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "aocr.name" . }}-mirror
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "aocr.name" . }}-mirror
+      {{- if .Values.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "{{ .Values.mirror.port }}"
+      {{- end }}
+    spec:
+      initContainers:
+      # Generate the writer-sidecar htpasswd file from the secret-injected
+      # username/password so the Distribution container can boot.
+      - name: writer-htpasswd
+        image: {{ .Values.mirror.writerImage | quote }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -eu
+          install -d /shared
+          htpasswd -Bbn "$WRITER_USERNAME" "$WRITER_PASSWORD" > /shared/htpasswd
+        env:
+        - name: WRITER_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: mirror-writer-username
+        - name: WRITER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: mirror-writer-password
+        volumeMounts:
+        - name: writer-htpasswd
+          mountPath: /shared
+      containers:
+      - name: mirror
+        image: "{{ $mirrorImageRepo }}/aocr-mirror:{{ $mirrorImageTag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.mirror.port }}
+        env:
+        - name: MIRROR_LISTEN_ADDR
+          value: ":{{ .Values.mirror.port }}"
+        - name: MIRROR_WRITER_ADDR
+          value: "http://127.0.0.1:5050"
+        - name: MIRROR_WRITER_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: mirror-writer-username
+        - name: MIRROR_WRITER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: mirror-writer-password
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.mirror.port }}
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        {{- if .Values.mirror.resources }}
+        resources:
+          {{- toYaml .Values.mirror.resources | nindent 10 }}
+        {{- end }}
+      - name: writer
+        image: {{ .Values.mirror.writerImage | quote }}
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: s3-access-key
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: s3-secret-key
+        ports:
+        - name: writer
+          containerPort: 5050
+          # Bound to 127.0.0.1 inside the pod so it is not externally routable.
+        volumeMounts:
+        - name: config
+          mountPath: /etc/docker/registry/config.yml
+          subPath: config.yml
+        - name: writer-htpasswd
+          mountPath: /etc/docker/registry/htpasswd
+          subPath: htpasswd
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "aocr.fullname" . }}-mirror-config
+      - name: writer-htpasswd
+        emptyDir: {}
+{{- end }}

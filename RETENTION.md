@@ -46,6 +46,16 @@ Docker does not support metadata aliases without an external control plane. If y
 docker pull aocr.aerol.ai/aocr/my-image:main--ttl-7d
 ```
 
+## Provenance (Phase 0 Groundwork)
+
+Each image row now carries a `provenance` column with one of three values:
+
+- `pushed` (default) — a user push into a normal `<org>/<repo>` namespace. This is the existing behavior; retention follows the keep-latest, `--ttl-*`, or `--idle-*` rules above.
+- `cluster-snapshot` — an AerolVM sandbox snapshot pushed into the `cluster/<cluster_id>/...` namespace. Populated when push-on-commit lands in Phase 1; not produced by current clients.
+- `mirror` — a layer or manifest cached from an upstream registry by the pull-through mirror under `mirror/...`. Populated when the mirror vhost lands in Phase 3; not produced by current clients.
+
+The retention rules above still apply uniformly across all three. Provenance-aware retention (different idle defaults per provenance, snapshot-liveness checks, etc.) is layered on in later phases. For details on cluster snapshots and the mirror cache, see [`plans/cluster-mirror-and-snapshot-distribution.md`](./plans/cluster-mirror-and-snapshot-distribution.md).
+
 ## Storage Reclamation (Garbage Collection)
 When the Reaper deletes an expired tag, it only deletes the **manifest** (the metadata linking the tag to its underlying layer blobs). The actual gigabytes of layer data remain in S3 because they might be shared by other active images.
 

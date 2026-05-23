@@ -7,6 +7,50 @@ const manifestHeaders = {
   Accept: "application/vnd.docker.distribution.manifest.v2+json",
 };
 
+const DEFAULT_MIRROR_IDLE_SECONDS = 30 * 24 * 60 * 60;
+
+function parseMirrorDefaultIdleSeconds(): number {
+  const raw = (process.env["MIRROR_DEFAULT_IDLE_SECONDS"] || "").trim();
+  if (raw.length === 0) {
+    return DEFAULT_MIRROR_IDLE_SECONDS;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_MIRROR_IDLE_SECONDS;
+  }
+
+  return Math.floor(parsed);
+}
+
+export function parseMirrorUpstreamRetentionMap(raw?: string): Record<string, number> {
+  const source = (raw == null ? process.env["MIRROR_UPSTREAM_RETENTION_JSON"] : raw) || "";
+  const trimmed = source.trim();
+  if (trimmed.length === 0) {
+    return {};
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return {};
+  }
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+
+  const out: Record<string, number> = {};
+  for (const [upstream, value] of Object.entries(parsed)) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      continue;
+    }
+    out[upstream] = Math.floor(seconds);
+  }
+  return out;
+}
+
 interface ReapOptions {
   repositoryIds?: string[];
   trigger?: string;
@@ -52,11 +96,46 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
   const repositoryIds = normalizeRepositoryIds(options.repositoryIds);
   const scope = buildRepositoryScope(repositoryIds);
   const trigger = options.trigger || "manual";
+  const mirrorDefaultIdleSeconds = parseMirrorDefaultIdleSeconds();
+  const mirrorOverrides = parseMirrorUpstreamRetentionMap();
+  const mirrorOverrideUpstreams = Object.keys(mirrorOverrides);
+  const mirrorOverrideSeconds = mirrorOverrideUpstreams.map((upstream) => mirrorOverrides[upstream]);
   const pgClient = await pool.connect();
 
   try {
+    const scopeValueCount = scope.values.length;
+    const mirrorDefaultParam = `$${scopeValueCount + 1}`;
+    const mirrorUpstreamArrayParam = `$${scopeValueCount + 2}`;
+    const mirrorSecondsArrayParam = `$${scopeValueCount + 3}`;
+    const mirrorParamValues = [
+      mirrorDefaultIdleSeconds,
+      mirrorOverrideUpstreams,
+      mirrorOverrideSeconds,
+    ];
     const staleImagesRes = await pgClient.query<ReapCandidateRow>(`
-      WITH keep_latest_images AS (
+      WITH mirror_overrides AS (
+        SELECT
+          UNNEST(${mirrorUpstreamArrayParam}::text[]) AS upstream_prefix,
+          UNNEST(${mirrorSecondsArrayParam}::bigint[]) AS retention_seconds
+      ),
+      mirror_resolved_retention AS (
+        SELECT
+          i.id,
+          COALESCE(
+            (
+              SELECT mo.retention_seconds
+              FROM mirror_overrides mo
+              WHERE i.upstream_ref IS NOT NULL
+                AND i.upstream_ref LIKE mo.upstream_prefix || '%'
+              ORDER BY LENGTH(mo.upstream_prefix) DESC
+              LIMIT 1
+            ),
+            ${mirrorDefaultParam}::bigint
+          ) AS retention_seconds
+        FROM images i
+        WHERE i.provenance = 'mirror'
+      ),
+      keep_latest_images AS (
         SELECT
           i.id,
           i.repository_id,
@@ -71,6 +150,7 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
         FROM images i
         JOIN repositories r ON i.repository_id = r.id
         ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'keep-latest'
+          AND i.provenance <> 'mirror'
       ),
       expired_ttl_images AS (
         SELECT
@@ -85,6 +165,7 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
         ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'ttl'
           AND i.expires_at IS NOT NULL
           AND i.expires_at <= CURRENT_TIMESTAMP
+          AND i.provenance <> 'mirror'
       ),
       expired_idle_images AS (
         SELECT
@@ -100,6 +181,24 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
           AND i.last_pulled_at IS NOT NULL
           AND i.retention_value_seconds IS NOT NULL
           AND i.last_pulled_at + (i.retention_value_seconds || ' seconds')::interval <= CURRENT_TIMESTAMP
+          AND i.provenance <> 'mirror'
+      ),
+      expired_mirror_idle_images AS (
+        SELECT
+          i.id,
+          i.repository_id,
+          i.tag,
+          i.manifest_digest,
+          r.organization,
+          r.name
+        FROM images i
+        JOIN repositories r ON i.repository_id = r.id
+        JOIN mirror_resolved_retention mrr ON mrr.id = i.id
+        ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.provenance = 'mirror'
+          AND i.retention_mode <> 'ttl'
+          AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at) IS NOT NULL
+          AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at)
+              + (mrr.retention_seconds || ' seconds')::interval <= CURRENT_TIMESTAMP
       )
       SELECT id, repository_id, tag, organization, name, manifest_digest
       FROM keep_latest_images
@@ -110,9 +209,12 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
       UNION ALL
       SELECT id, repository_id, tag, organization, name, manifest_digest
       FROM expired_idle_images
+      UNION ALL
+      SELECT id, repository_id, tag, organization, name, manifest_digest
+      FROM expired_mirror_idle_images
       ORDER BY organization, name, tag
       LIMIT 500
-    `, scope.values);
+    `, [...scope.values, ...mirrorParamValues]);
 
     console.log(`   [${trigger}] found ${staleImagesRes.rows.length} stale image(s) across ${scope.label}`);
 

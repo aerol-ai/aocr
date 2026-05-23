@@ -55,11 +55,21 @@ spec:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: auth-pat-tokens
+        - name: AUTH_CLUSTER_PAT_TOKENS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: auth-cluster-pat-tokens
         - name: JWT_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: jwt-private-key
+        - name: UPSTREAM_AUTH_WRAP_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: upstream-auth-wrap-keys
 ---
 apiVersion: v1
 kind: Service

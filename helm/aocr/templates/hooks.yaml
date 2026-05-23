@@ -37,6 +37,13 @@ spec:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: hook-token
+        - name: INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: internal-api-token
+        - name: REGISTRY_URL
+          value: "http://{{ include "aocr.fullname" . }}-registry:{{ .Values.registry.port }}"
         - name: POSTGRES_HOST
           value: {{ default (printf "%s-postgres" (include "aocr.fullname" .)) .Values.postgres.host | quote }}
         - name: POSTGRES_PORT

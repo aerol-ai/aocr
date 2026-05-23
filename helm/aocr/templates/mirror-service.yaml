@@ -1,0 +1,17 @@
+{{- if .Values.mirror.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "aocr.fullname" . }}-mirror
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-mirror
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: {{ .Values.mirror.port }}
+    targetPort: {{ .Values.mirror.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "aocr.name" . }}-mirror
+{{- end }}

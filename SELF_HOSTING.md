@@ -185,6 +185,7 @@ Upgrade note:
 
 - New installs pick up the updated schema automatically.
 - Existing installs should run [db/migrate-retention-policies.sql](./db/migrate-retention-policies.sql) before deploying the updated hooks and reaper images.
+- Installs upgrading past chart 1.1.2 should additionally run [db/migrate-provenance.sql](./db/migrate-provenance.sql) before deploying. This adds `provenance`, `upstream_ref`, `cluster_id`, and `source_sandbox_id` to the `images` table. It is idempotent and backfills every existing row to `provenance = 'pushed'`, so existing user pushes keep their current retention behavior.
 
 ## Metrics
 
