@@ -1,0 +1,23 @@
+# Rename this file to vars.yml and remove the .example suffix
+# Configure your deployment-specific variables here.
+
+aocr_namespace: "aerol-system"
+aocr_helm_release_name: "aocr"
+aocr_helm_chart_ref: "oci://ghcr.io/aerol-ai/charts/aocr"
+aocr_helm_chart_version: "1.0.2-main.28"
+
+aocr_image_repository: "ghcr.io/aerol-ai"
+aocr_image_tag: "latest"
+
+# Set your custom domain
+aocr_global_domain: "YOUR_DOMAIN_HERE"
+
+# S3 Configuration
+aocr_registry_s3_region: "us-east-1"
+aocr_registry_s3_bucket: "YOUR_S3_BUCKET_NAME_HERE"
+
+aocr_auth_validationServiceUrl: "https://app.aerol.ai/api/auth/info"
+
+# Paths to the JWT keys on the Ansible control node
+aocr_jwt_private_key_path: "{{ playbook_dir }}/../../secrets/jwt-private.pem"
+aocr_jwt_public_certificate_path: "{{ playbook_dir }}/../../secrets/jwt-public.crt"
