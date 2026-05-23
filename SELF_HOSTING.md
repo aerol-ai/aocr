@@ -187,6 +187,7 @@ Upgrade note:
 - New installs pick up the updated schema automatically.
 - Existing installs should run [db/migrate-retention-policies.sql](./db/migrate-retention-policies.sql) before deploying the updated hooks and reaper images.
 - Installs upgrading past chart 1.1.2 should additionally run [db/migrate-provenance.sql](./db/migrate-provenance.sql) before deploying. This adds `provenance`, `upstream_ref`, `cluster_id`, and `source_sandbox_id` to the `images` table. It is idempotent and backfills every existing row to `provenance = 'pushed'`, so existing user pushes keep their current retention behavior.
+- Installs that already provisioned `idx_images_provenance_idle` with the old `retention_mode = 'idle'` predicate must run [db/migrate-mirror-index.sql](./db/migrate-mirror-index.sql) once after deploying the updated reaper. The predicate is widened to `retention_mode <> 'ttl'` so the mirror-idle reaper query is actually index-served; `CREATE INDEX IF NOT EXISTS` can't change an existing predicate, so the migration is a one-shot DROP + CREATE. Idempotent.
 
 ## Metrics
 

@@ -111,11 +111,11 @@ CREATE INDEX IF NOT EXISTS idx_images_idle_expiry
     ON images(retention_mode, last_pulled_at)
     WHERE retention_mode = 'idle';
 
--- Previously this partial index was scoped to retention_mode = 'idle', which covered
--- almost no rows in practice — mirror tags default to keep-latest. The mirror-idle
--- reaper query in hooks/src/util/imageRetention.ts filters by
--- (provenance = 'mirror' AND retention_mode <> 'ttl'), so widen the index to match.
-DROP INDEX IF EXISTS idx_images_provenance_idle;
+-- Partial index for the mirror-idle reaper query in
+-- hooks/src/util/imageRetention.ts (WHERE provenance = 'mirror' AND retention_mode <> 'ttl').
+-- Existing installs whose old idx_images_provenance_idle was scoped to retention_mode = 'idle'
+-- must run db/migrate-mirror-index.sql once — CREATE INDEX IF NOT EXISTS is a no-op when
+-- the name already exists, so the predicate cannot be widened from init.sql alone.
 CREATE INDEX IF NOT EXISTS idx_images_provenance_idle
     ON images(provenance, retention_mode, last_pulled_at, last_pushed_at)
     WHERE provenance = 'mirror' AND retention_mode <> 'ttl';
