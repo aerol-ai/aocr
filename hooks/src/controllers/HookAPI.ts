@@ -9,6 +9,7 @@ import {
 import { createPool } from "../util/database";
 import { reapObsoleteImages } from "../util/imageRetention";
 import { cachePushedImage } from "../util/redis";
+import { parseTagRetention } from "../util/tagRetention";
 import {
   bindMetricsPool,
   elapsedSecondsSince,
@@ -63,6 +64,7 @@ export class HookAPI {
       if (event.action === "push") {
         const image = event.target.repository;
         const tag = event.target.tag;
+        const manifestDigest = typeof event?.target?.digest === "string" ? event.target.digest : null;
 
         if (!image || !tag) {
           continue;
@@ -70,6 +72,7 @@ export class HookAPI {
 
         const imageWithTag = `${image}:${tag}`;
         const pushedAt = new Date();
+        const retention = parseTagRetention(tag, pushedAt);
 
         // Redis (legacy/cache)
         const redisStartedAt = process.hrtime.bigint();
@@ -97,8 +100,34 @@ export class HookAPI {
               const repoId = repoRes.rows[0].id;
 
               await pgClient.query(
-                "INSERT INTO images (repository_id, tag, last_pushed_at) VALUES ($1, $2, $3) ON CONFLICT (repository_id, tag) DO UPDATE SET last_pushed_at = EXCLUDED.last_pushed_at",
-                [repoId, tag, pushedAt]
+                `INSERT INTO images (
+                  repository_id,
+                  tag,
+                  last_pushed_at,
+                  retention_mode,
+                  retention_value_seconds,
+                  expires_at,
+                  raw_retention_suffix,
+                  manifest_digest
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (repository_id, tag) DO UPDATE SET
+                  last_pushed_at = EXCLUDED.last_pushed_at,
+                  retention_mode = EXCLUDED.retention_mode,
+                  retention_value_seconds = EXCLUDED.retention_value_seconds,
+                  expires_at = EXCLUDED.expires_at,
+                  raw_retention_suffix = EXCLUDED.raw_retention_suffix,
+                  manifest_digest = COALESCE(EXCLUDED.manifest_digest, images.manifest_digest)`,
+                [
+                  repoId,
+                  tag,
+                  pushedAt,
+                  retention.retentionMode,
+                  retention.retentionValueSeconds,
+                  retention.expiresAt,
+                  retention.rawRetentionSuffix,
+                  manifestDigest,
+                ]
               );
 
               await pgClient.query('COMMIT');

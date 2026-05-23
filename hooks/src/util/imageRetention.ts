@@ -12,6 +12,15 @@ interface ReapOptions {
   trigger?: string;
 }
 
+interface ReapCandidateRow {
+  id: string;
+  repository_id: string;
+  tag: string;
+  organization: string;
+  name: string;
+  manifest_digest: string | null;
+}
+
 function normalizeRepositoryIds(repositoryIds?: string[]): string[] {
   return (repositoryIds || [])
     .map((repositoryId) => repositoryId.trim())
@@ -46,12 +55,13 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
   const pgClient = await pool.connect();
 
   try {
-    const staleImagesRes = await pgClient.query(`
-      WITH ranked_images AS (
+    const staleImagesRes = await pgClient.query<ReapCandidateRow>(`
+      WITH keep_latest_images AS (
         SELECT
           i.id,
           i.repository_id,
           i.tag,
+          i.manifest_digest,
           r.organization,
           r.name,
           ROW_NUMBER() OVER (
@@ -60,11 +70,28 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
           ) AS row_num
         FROM images i
         JOIN repositories r ON i.repository_id = r.id
-        ${scope.query}
+        ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'keep-latest'
+      ),
+      expired_ttl_images AS (
+        SELECT
+          i.id,
+          i.repository_id,
+          i.tag,
+          i.manifest_digest,
+          r.organization,
+          r.name
+        FROM images i
+        JOIN repositories r ON i.repository_id = r.id
+        ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'ttl'
+          AND i.expires_at IS NOT NULL
+          AND i.expires_at <= CURRENT_TIMESTAMP
       )
-      SELECT id, repository_id, tag, organization, name
-      FROM ranked_images
+      SELECT id, repository_id, tag, organization, name, manifest_digest
+      FROM keep_latest_images
       WHERE row_num > 1
+      UNION ALL
+      SELECT id, repository_id, tag, organization, name, manifest_digest
+      FROM expired_ttl_images
       ORDER BY organization, name, tag
     `, scope.values);
 
@@ -75,7 +102,7 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
       const repoPath = `${row.organization}/${row.name}`;
 
       try {
-        const digest = await getDigestForTag(repoPath, row.tag);
+        const digest = row.manifest_digest || await getDigestForTag(repoPath, row.tag);
         if (digest == null) {
           await pgClient.query("DELETE FROM images WHERE id = $1", [row.id]);
           continue;

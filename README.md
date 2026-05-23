@@ -1,6 +1,6 @@
 # aerol.ai / aocr
 
-**aocr** is an open-source authenticated OCI registry. It stores image metadata in PostgreSQL, stores layers and manifests in S3-compatible storage, and automatically removes older tags so each repository keeps only its latest image.
+**aocr** is an open-source authenticated OCI registry. It stores image metadata in PostgreSQL, stores layers and manifests in S3-compatible storage, and supports policy-based cleanup: plain tags stay latest-only while `--ttl-*` tags expire by age.
 
 `aocr.aerol.ai` is one deployed instance of this repository. The instructions below explain how to use that hosted registry as an end user. If you want to deploy your own instance, follow [SELF_HOSTING.md](./SELF_HOSTING.md).
 
@@ -8,7 +8,7 @@
 
 - **Authenticated access** with Docker token auth.
 - **PAT-backed validation** against an upstream `/api/auth/info` endpoint.
-- **Repository-aware cleanup** with a reaper that keeps the newest image per repository.
+- **Repository-aware cleanup** with a reaper that keeps plain tags latest-only and expires `--ttl-*` tags by age.
 - **PostgreSQL metadata** for users, repositories, and pushed tags.
 - **S3-compatible storage** for manifests and layers.
 - **Helm for Kubernetes and Docker Compose for local development**.
@@ -30,6 +30,8 @@ export AEROL_TOKEN="your-token-from-app-aerol-ai"
 echo "$AEROL_TOKEN" | docker login aocr.aerol.ai -u "$AEROL_LOGIN" --password-stdin
 docker tag my-image aocr.aerol.ai/aocr/my-image:main
 docker push aocr.aerol.ai/aocr/my-image:main
+docker tag my-image aocr.aerol.ai/aocr/my-image:main--ttl-7d
+docker push aocr.aerol.ai/aocr/my-image:main--ttl-7d
 docker pull aocr.aerol.ai/aocr/my-image:main
 ```
 
@@ -38,7 +40,21 @@ How hosted login works:
 - The presented login name must match the validated user profile's `id`, `username`, or `email`.
 - End users never need the internal webhook secret used by the deployment.
 
-When a newer image is pushed to the same repository, the hook immediately starts removing older image records and registry manifests for that repository. The scheduled reaper still runs separately and sweeps the database, keeping only the newest image per repository.
+Plain tags still follow latest-only cleanup. Tags with supported `--ttl-*` suffixes remain pullable until their TTL expires.
+
+Supported phase-1 TTL suffixes include:
+
+- `--ttl-1h`
+- `--ttl-6h`
+- `--ttl-24h`
+- `--ttl-7d`
+- `--ttl-30d`
+- `--ttl-90d`
+- `--ttl-180d`
+- `--ttl-365d`
+- aliases `--ttl-1month`, `--ttl-3month`, `--ttl-6month`, `--ttl-12month`
+
+For syntax details and operational caveats, see [RETENTION.md](./RETENTION.md).
 
 ## Deploy Your Own
 
@@ -52,6 +68,7 @@ If you want to run your own aocr instance:
 ## Architecture
 
 For the request and cleanup flow, see [understanding.md](./understanding.md).
+For retention tag syntax and behavior, see [RETENTION.md](./RETENTION.md).
 For metrics endpoints and the service-by-service metrics matrix, see [OBSERVABILITY.md](./OBSERVABILITY.md).
 The repository also includes an importable Grafana dashboard at [deploy/grafana/aocr-observability-dashboard.json](./deploy/grafana/aocr-observability-dashboard.json).
 
