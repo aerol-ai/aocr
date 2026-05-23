@@ -43,11 +43,13 @@ If you ever need to manually override these (e.g., specifying an AWS profile or 
 
 ## Deployment Instructions
 
-1. Ensure your `vars.yml` is configured (see above).
-2. Execute the playbook:
+1. Ensure your `vars.yml` is configured.
+2. Execute the playbook, passing the **exact chart version** you want to deploy as an extra parameter (`-e`):
    ```bash
    cd ansible
-   ansible-playbook playbooks/deploy-aocr.yml
+   ansible-playbook playbooks/deploy-aocr.yml -e "aocr_helm_chart_version=1.0.2-main.28"
    ```
+
+*Note: Passing `-e "aocr_helm_chart_version=..."` at the command line will automatically override whatever version is written in your `vars.yml`. This is the best way to do routine upgrades!*
 
 The playbook will handle namespace creation, idempotent certificate generation, file syncing, environment injection, and Helm upgrades automatically.
