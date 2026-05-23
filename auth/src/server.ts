@@ -4,6 +4,11 @@ import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import crypto from 'crypto';
 import {
+  ClusterPatEntry,
+  evaluateClusterPatScope,
+  parseClusterPatEntries,
+} from './clusterPat';
+import {
   bindMetricsPool,
   elapsedSecondsSince,
   mountMetrics,
@@ -11,6 +16,7 @@ import {
   recordTokenIssuance,
   recordTokenValidation,
   recordUpstreamValidation,
+  setConfiguredClusterPatCount,
   setConfiguredPatCount,
 } from './metrics';
 
@@ -68,11 +74,13 @@ bindMetricsPool(pool);
 const VALIDATION_SERVICE_URL = process.env.VALIDATION_SERVICE_URL;
 const AUTH_PAT_TOKEN = process.env.AUTH_PAT_TOKEN;
 const AUTH_PAT_TOKENS = process.env.AUTH_PAT_TOKENS;
+const AUTH_CLUSTER_PAT_TOKENS = process.env.AUTH_CLUSTER_PAT_TOKENS;
 const JWT_PRIVATE_KEY = process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n');
 const ISSUER = 'aocr-auth';
 const DEFAULT_REGISTRY_SERVICE = process.env.REGISTRY_SERVICE || 'aocr';
 const STATIC_PAT_SUBJECT = 'static-pat';
 const STATIC_PAT_PROVIDER = 'static-pat';
+const CLUSTER_PAT_PROVIDER = 'cluster-pat';
 
 app.use(express.json());
 mountMetrics(app);
@@ -92,9 +100,14 @@ interface StaticPatConfig {
   userProfile: ValidationUserProfile;
 }
 
+interface ClusterPatConfig {
+  entries: ClusterPatEntry[];
+}
+
 interface ValidationResult {
-  strategy: 'api' | 'pat';
+  strategy: 'api' | 'pat' | 'cluster-pat';
   userProfile: ValidationUserProfile;
+  clusterId?: string;
 }
 
 function parseStaticPatTokens(...rawValues: Array<string | undefined>): string[] {
@@ -148,6 +161,54 @@ function getStaticPatConfig(): StaticPatConfig | null {
 
 const STATIC_PAT_CONFIG = getStaticPatConfig();
 setConfiguredPatCount(STATIC_PAT_CONFIG?.tokens.length || 0);
+
+function getClusterPatConfig(): ClusterPatConfig | null {
+  const entries = parseClusterPatEntries(AUTH_CLUSTER_PAT_TOKENS);
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return { entries };
+}
+
+const CLUSTER_PAT_CONFIG = getClusterPatConfig();
+setConfiguredClusterPatCount(CLUSTER_PAT_CONFIG?.entries.length || 0);
+
+function buildClusterPatProfile(clusterId: string): ValidationUserProfile {
+  const subject = `cluster:${clusterId}`;
+  return {
+    externalId: subject,
+    username: null,
+    email: null,
+    displayName: subject,
+    avatarUrl: null,
+    authProvider: CLUSTER_PAT_PROVIDER,
+    rawProfile: {
+      source: CLUSTER_PAT_PROVIDER,
+      user: { id: subject },
+      authProvider: CLUSTER_PAT_PROVIDER,
+      clusterId,
+    },
+  };
+}
+
+function validateUsingClusterPat(validationToken: string): ValidationResult | null {
+  if (!CLUSTER_PAT_CONFIG) {
+    return null;
+  }
+
+  for (const entry of CLUSTER_PAT_CONFIG.entries) {
+    if (tokensMatch(entry.token, validationToken)) {
+      return {
+        strategy: 'cluster-pat',
+        userProfile: buildClusterPatProfile(entry.clusterId),
+        clusterId: entry.clusterId,
+      };
+    }
+  }
+
+  return null;
+}
 
 function getValidationInfoUrl(): string {
   if (!VALIDATION_SERVICE_URL) {
@@ -277,6 +338,17 @@ async function validatePresentedToken(validationToken: string): Promise<Validati
     recordTokenValidation('pat', 'miss', elapsedSecondsSince(startedAt));
   }
 
+  if (CLUSTER_PAT_CONFIG) {
+    const startedAt = process.hrtime.bigint();
+    const clusterPatResult = validateUsingClusterPat(validationToken);
+    if (clusterPatResult) {
+      recordTokenValidation('cluster-pat', 'success', elapsedSecondsSince(startedAt));
+      return clusterPatResult;
+    }
+
+    recordTokenValidation('cluster-pat', 'miss', elapsedSecondsSince(startedAt));
+  }
+
   if (VALIDATION_SERVICE_URL) {
     const startedAt = process.hrtime.bigint();
 
@@ -290,8 +362,8 @@ async function validatePresentedToken(validationToken: string): Promise<Validati
     }
   }
 
-  if (STATIC_PAT_CONFIG) {
-    throw new Error('Invalid static PAT token');
+  if (STATIC_PAT_CONFIG || CLUSTER_PAT_CONFIG) {
+    throw new Error('Invalid PAT token');
   }
 
   throw new Error('No validation method configured');
@@ -321,7 +393,7 @@ function presentedIdentityMatchesUser(presentedIdentity: string | null, account:
 app.get('/v2/token', async (req, res) => {
   const { account, service, scope } = req.query;
   const authHeader = req.headers.authorization;
-  let validationStrategy: 'api' | 'pat' | 'unknown' = 'unknown';
+  let validationStrategy: 'api' | 'pat' | 'cluster-pat' | 'unknown' = 'unknown';
 
   try {
     const { validationToken, presentedIdentity } = extractPresentedCredentials(authHeader);
@@ -396,11 +468,28 @@ app.get('/v2/token', async (req, res) => {
     // 3. Issue Docker-compatible JWT
     const access = [];
     if (scope) {
-      const [type, name, actions] = (scope as string).split(':');
+      const [type, name, actionsStr] = (scope as string).split(':');
+      const requestedActions = (actionsStr || '').split(',').filter((action) => action.length > 0);
+      let permittedActions = requestedActions;
+
+      if (validationResult.strategy === 'cluster-pat') {
+        if (!validationResult.clusterId) {
+          recordTokenIssuance('cluster-pat', 'error');
+          return res.status(401).json({ error: 'cluster PAT missing cluster_id' });
+        }
+
+        const decision = evaluateClusterPatScope(validationResult.clusterId, type, name, requestedActions);
+        if (!decision.allowed) {
+          recordTokenIssuance('cluster-pat', 'forbidden');
+          return res.status(401).json({ error: decision.reason || 'cluster PAT scope rejected' });
+        }
+        permittedActions = decision.allowedActions;
+      }
+
       access.push({
         type,
         name,
-        actions: actions.split(',')
+        actions: permittedActions,
       });
     }
 

@@ -37,6 +37,12 @@ auth:
   pat:
     token: ""
     tokens: []
+  # Cluster-class PATs (F3). Each entry maps a cluster_id (UUID) to a token.
+  # The bearer of this token can push and pull only inside the `cluster/<cluster_id>/*`
+  # namespace, plus pull (read-only) from `mirror/*`. Used by AerolVM sandboxd's
+  # machine identity once snapshot push-on-commit lands.
+  clusterPat:
+    tokens: []  # ["<cluster_id_uuid>=<token>", ...]
 
 metrics:
   enabled: false

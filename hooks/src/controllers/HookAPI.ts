@@ -9,7 +9,7 @@ import {
 import { createPool } from "../util/database";
 import { reapObsoleteImages } from "../util/imageRetention";
 import { cachePushedImage } from "../util/redis";
-import { parseTagRetention } from "../util/tagRetention";
+import { inferredProvenance, parseTagRetention } from "../util/tagRetention";
 import {
   bindMetricsPool,
   elapsedSecondsSince,
@@ -86,16 +86,17 @@ export class HookAPI {
 
         // Postgres metadata store
         try {
-          const [org, repo] = image.split('/');
-          if (org && repo) {
+          const parsed = inferredProvenance(image);
+          if (parsed) {
+            const { organization, name, provenance, clusterId, upstreamRef } = parsed;
             const postgresStartedAt = process.hrtime.bigint();
             const pgClient = await pool.connect();
             try {
               await pgClient.query('BEGIN');
-              
+
               const repoRes = await pgClient.query(
                 'INSERT INTO repositories (organization, name) VALUES ($1, $2) ON CONFLICT (organization, name) DO UPDATE SET name = $2 RETURNING id',
-                [org, repo]
+                [organization, name]
               );
               const repoId = repoRes.rows[0].id;
 
@@ -108,16 +109,22 @@ export class HookAPI {
                   retention_value_seconds,
                   expires_at,
                   raw_retention_suffix,
-                  manifest_digest
+                  manifest_digest,
+                  provenance,
+                  cluster_id,
+                  upstream_ref
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 ON CONFLICT (repository_id, tag) DO UPDATE SET
                   last_pushed_at = EXCLUDED.last_pushed_at,
                   retention_mode = EXCLUDED.retention_mode,
                   retention_value_seconds = EXCLUDED.retention_value_seconds,
                   expires_at = EXCLUDED.expires_at,
                   raw_retention_suffix = EXCLUDED.raw_retention_suffix,
-                  manifest_digest = COALESCE(EXCLUDED.manifest_digest, images.manifest_digest)`,
+                  manifest_digest = COALESCE(EXCLUDED.manifest_digest, images.manifest_digest),
+                  provenance = EXCLUDED.provenance,
+                  cluster_id = COALESCE(EXCLUDED.cluster_id, images.cluster_id),
+                  upstream_ref = COALESCE(EXCLUDED.upstream_ref, images.upstream_ref)`,
                 [
                   repoId,
                   tag,
@@ -127,6 +134,9 @@ export class HookAPI {
                   retention.expiresAt,
                   retention.rawRetentionSuffix,
                   manifestDigest,
+                  provenance,
+                  clusterId,
+                  upstreamRef,
                 ]
               );
 
@@ -154,8 +164,9 @@ export class HookAPI {
         }
 
         try {
-          const [org, repo] = image.split('/');
-          if (org && repo) {
+          const parsed = inferredProvenance(image);
+          if (parsed) {
+            const { organization, name } = parsed;
             const postgresStartedAt = process.hrtime.bigint();
             const pgClient = await pool.connect();
             try {
@@ -169,7 +180,7 @@ export class HookAPI {
                   AND i.tag = $3
                   AND i.retention_mode = 'idle'
                   AND (i.last_pulled_at IS NULL OR i.last_pulled_at < CURRENT_TIMESTAMP - INTERVAL '1 hour')
-              `, [org, repo, tag]);
+              `, [organization, name, tag]);
               recordPostgresSync("success", elapsedSecondsSince(postgresStartedAt));
             } catch (err) {
               recordPostgresSync("error", elapsedSecondsSince(postgresStartedAt));

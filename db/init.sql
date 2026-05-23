@@ -58,9 +58,25 @@ ALTER TABLE images
 ALTER TABLE images
     ADD COLUMN IF NOT EXISTS last_pulled_at TIMESTAMP WITH TIME ZONE;
 
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS provenance VARCHAR(32);
+
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS upstream_ref TEXT;
+
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS cluster_id UUID;
+
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS source_sandbox_id TEXT;
+
 UPDATE images
 SET last_pushed_at = COALESCE(last_pushed_at, created_at, CURRENT_TIMESTAMP)
 WHERE last_pushed_at IS NULL;
+
+UPDATE images
+SET provenance = COALESCE(provenance, 'pushed')
+WHERE provenance IS NULL;
 
 UPDATE images
 SET retention_mode = COALESCE(retention_mode, 'keep-latest')
@@ -78,6 +94,12 @@ ALTER TABLE images
 ALTER TABLE images
     ALTER COLUMN retention_mode SET NOT NULL;
 
+ALTER TABLE images
+    ALTER COLUMN provenance SET DEFAULT 'pushed';
+
+ALTER TABLE images
+    ALTER COLUMN provenance SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_images_repository_last_pushed_at
     ON images(repository_id, last_pushed_at DESC, created_at DESC);
 
@@ -88,3 +110,11 @@ CREATE INDEX IF NOT EXISTS idx_images_retention_expiry
 CREATE INDEX IF NOT EXISTS idx_images_idle_expiry
     ON images(retention_mode, last_pulled_at)
     WHERE retention_mode = 'idle';
+
+CREATE INDEX IF NOT EXISTS idx_images_provenance_idle
+    ON images(provenance, retention_mode, last_pulled_at)
+    WHERE provenance = 'mirror' AND retention_mode = 'idle';
+
+CREATE INDEX IF NOT EXISTS idx_images_provenance_cluster
+    ON images(provenance, cluster_id)
+    WHERE provenance = 'cluster-snapshot';

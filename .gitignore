@@ -2,9 +2,11 @@
 .production.env
 
 auth/dist/
+auth/dist-test/
 auth/node_modules/
 
 hooks/build/
+hooks/build-test/
 hooks/node_modules/
 
 web/.next/

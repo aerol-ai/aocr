@@ -55,6 +55,11 @@ spec:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: auth-pat-tokens
+        - name: AUTH_CLUSTER_PAT_TOKENS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "aocr.fullname" . }}-secrets
+              key: auth-cluster-pat-tokens
         - name: JWT_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
