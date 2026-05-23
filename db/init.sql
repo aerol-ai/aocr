@@ -55,6 +55,9 @@ ALTER TABLE images
 ALTER TABLE images
     ADD COLUMN IF NOT EXISTS manifest_digest VARCHAR(255);
 
+ALTER TABLE images
+    ADD COLUMN IF NOT EXISTS last_pulled_at TIMESTAMP WITH TIME ZONE;
+
 UPDATE images
 SET last_pushed_at = COALESCE(last_pushed_at, created_at, CURRENT_TIMESTAMP)
 WHERE last_pushed_at IS NULL;
@@ -81,3 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_images_repository_last_pushed_at
 CREATE INDEX IF NOT EXISTS idx_images_retention_expiry
     ON images(retention_mode, expires_at)
     WHERE retention_mode = 'ttl';
+
+CREATE INDEX IF NOT EXISTS idx_images_idle_expiry
+    ON images(retention_mode, last_pulled_at)
+    WHERE retention_mode = 'idle';

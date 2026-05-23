@@ -28,9 +28,9 @@ const TTL_CANONICAL_SUFFIX: Record<string, string> = {
   "12month": "365d",
 };
 
-const TTL_TAG_PATTERN = /^(.*)--ttl-([a-z0-9]+)$/;
+const TTL_TAG_PATTERN = /^(.*)--(ttl|idle)-([a-z0-9]+)$/;
 
-export type RetentionMode = "keep-latest" | "ttl";
+export type RetentionMode = "keep-latest" | "ttl" | "idle";
 
 export interface ParsedTagRetention {
   retentionMode: RetentionMode;
@@ -52,7 +52,8 @@ export function parseTagRetention(tag: string, referenceTime: Date = new Date())
     };
   }
 
-  const rawRetentionSuffix = match[2];
+  const retentionType = match[2] as "ttl" | "idle";
+  const rawRetentionSuffix = match[3];
   const retentionValueSeconds = TTL_SUFFIX_SECONDS[rawRetentionSuffix];
   if (retentionValueSeconds == null) {
     return {
@@ -65,9 +66,9 @@ export function parseTagRetention(tag: string, referenceTime: Date = new Date())
   }
 
   return {
-    retentionMode: "ttl",
+    retentionMode: retentionType,
     retentionValueSeconds,
-    expiresAt: new Date(referenceTime.getTime() + retentionValueSeconds * 1000),
+    expiresAt: retentionType === "ttl" ? new Date(referenceTime.getTime() + retentionValueSeconds * 1000) : null,
     rawRetentionSuffix,
     canonicalRetentionSuffix: TTL_CANONICAL_SUFFIX[rawRetentionSuffix],
   };

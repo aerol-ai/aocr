@@ -85,6 +85,21 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
         ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'ttl'
           AND i.expires_at IS NOT NULL
           AND i.expires_at <= CURRENT_TIMESTAMP
+      ),
+      expired_idle_images AS (
+        SELECT
+          i.id,
+          i.repository_id,
+          i.tag,
+          i.manifest_digest,
+          r.organization,
+          r.name
+        FROM images i
+        JOIN repositories r ON i.repository_id = r.id
+        ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'idle'
+          AND i.last_pulled_at IS NOT NULL
+          AND i.retention_value_seconds IS NOT NULL
+          AND i.last_pulled_at + (i.retention_value_seconds || ' seconds')::interval <= CURRENT_TIMESTAMP
       )
       SELECT id, repository_id, tag, organization, name, manifest_digest
       FROM keep_latest_images
@@ -92,7 +107,11 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
       UNION ALL
       SELECT id, repository_id, tag, organization, name, manifest_digest
       FROM expired_ttl_images
+      UNION ALL
+      SELECT id, repository_id, tag, organization, name, manifest_digest
+      FROM expired_idle_images
       ORDER BY organization, name, tag
+      LIMIT 500
     `, scope.values);
 
     console.log(`   [${trigger}] found ${staleImagesRes.rows.length} stale image(s) across ${scope.label}`);

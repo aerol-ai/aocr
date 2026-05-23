@@ -76,6 +76,34 @@ reaper:
   # Leave empty to sweep all repositories, or set repository UUIDs to limit the cron job scope.
   repositoryIds: []
 
+# Retention Configuration
+retention:
+  enabled: true
+  allowAgeTtl: true
+  allowIdleTtl: true
+  defaultMode: keep-latest
+  supportedAgePolicies:
+    - 1h
+    - 6h
+    - 24h
+    - 7d
+    - 30d
+    - 90d
+    - 180d
+    - 365d
+  supportedIdlePolicies:
+    - 7d
+    - 30d
+    - 90d
+    - 180d
+
+# Registry GC Configuration
+registryGc:
+  enabled: true
+  dryRun: true
+  schedule: "0 3 * * *"
+  requireReadOnly: true
+
 # Web Frontend
 web:
   port: 3000

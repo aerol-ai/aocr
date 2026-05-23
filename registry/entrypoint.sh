@@ -46,11 +46,12 @@ if [ "$NEEDS_RENDER" = "true" ]; then
         "$SOURCE_CONFIG" > "$RUNTIME_CONFIG"
 fi
 
-# Run garbage collection job in background
-# /garbage-collect.sh &
+# Garbage collection must be run externally or via cronjob
+# and should not run on every start.
 
 case "${1:-}" in
     *.yaml|*.yml) set -- registry serve "$RUNTIME_CONFIG" ;;
+    /garbage-collect.sh|garbage-collect.sh) set -- /garbage-collect.sh "$RUNTIME_CONFIG" ;;
     serve|garbage-collect|help|-*) set -- registry "$@" ;;
 esac
 
