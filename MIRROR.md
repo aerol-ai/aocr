@@ -102,6 +102,20 @@ mirror:
 The Helm chart fails closed if `mirror.enabled` is true but
 `mirror.allowList` is empty.
 
+### Verify the mirror is up
+
+The mirror only registers four routes: `/v2/`, `/v2`, `/metrics`, and
+`/healthz`. Anything else (including `/`) returns `404 page not found` —
+this is expected, same as Docker Distribution itself.
+
+```bash
+curl -i https://mirror.<domain>/healthz   # → 200 OK
+curl -i https://mirror.<domain>/v2/       # → 401 Unauthorized (auth challenge) = healthy
+curl -i https://mirror.<domain>/          # → 404 page not found (expected)
+```
+
+A 401 on `/v2/` is the canonical "registry is up and asking for a token."
+
 ### Use the mirror as a Docker daemon
 
 ```json
