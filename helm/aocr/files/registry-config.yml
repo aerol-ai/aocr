@@ -22,7 +22,7 @@ http:
   debug:
     addr: 0.0.0.0:5001
     prometheus:
-      enabled: true
+      enabled: __METRICS_ENABLED__
 
 auth:
   token:

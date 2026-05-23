@@ -13,10 +13,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks
+      {{- if .Values.metrics.enabled }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
         prometheus.io/port: "{{ .Values.hooks.port }}"
+      {{- end }}
     spec:
       containers:
       - name: hooks
@@ -28,6 +30,8 @@ spec:
         env:
         - name: PORT
           value: "{{ .Values.hooks.port }}"
+        - name: METRICS_ENABLED
+          value: {{ .Values.metrics.enabled | quote }}
         - name: HOOK_TOKEN
           valueFrom:
             secretKeyRef:
@@ -65,10 +69,12 @@ metadata:
   labels:
     {{- include "aocr.labels" . | nindent 4 }}
     app.kubernetes.io/name: {{ include "aocr.name" . }}-hooks
+  {{- if .Values.metrics.enabled }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "{{ .Values.hooks.port }}"
+  {{- end }}
 spec:
   type: ClusterIP
   ports:

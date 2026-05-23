@@ -1,6 +1,13 @@
 # Observability
 
-This repository now exposes first-class metrics for the registry pull path and the services that support it.
+This repository can expose first-class metrics for the registry pull path and the services that support it when metrics are enabled.
+
+Metrics are disabled by default. Turn them on explicitly with:
+
+```yaml
+metrics:
+  enabled: true
+```
 
 ## Metrics Matrix
 
@@ -15,7 +22,7 @@ This repository now exposes first-class metrics for the registry pull path and t
 
 ## Kubernetes Scrape Setup
 
-The Helm chart now:
+When `metrics.enabled=true`, the Helm chart:
 
 - enables native Prometheus metrics in the registry debug listener
 - annotates the auth, hooks, and registry pods and services for annotation-based Prometheus scraping
@@ -26,6 +33,7 @@ To enable `ServiceMonitor` objects:
 
 ```yaml
 metrics:
+  enabled: true
   serviceMonitor:
     enabled: true
 ```
@@ -34,6 +42,7 @@ To enable the built-in alert rules:
 
 ```yaml
 metrics:
+  enabled: true
   prometheusRule:
     enabled: true
 ```
@@ -92,3 +101,5 @@ With Docker Compose, the relevant metrics endpoints are:
 - `http://localhost:8080/metrics` for auth
 - `http://localhost:8000/metrics` for hooks
 - `http://localhost:5001/metrics` for registry
+
+Those endpoints only return metrics when `METRICS_ENABLED=true`.

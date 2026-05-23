@@ -153,16 +153,22 @@ Notes:
 
 The chart now exposes scrapeable metrics for the pull-path services:
 
+```yaml
+metrics:
+  enabled: true
+```
+
 - `auth`: `/metrics` on port `8080`
 - `hooks`: `/metrics` on port `8000`
 - `registry`: `/metrics` on debug port `5001`
 
-By default, the auth, hooks, and registry pods and services are annotated with `prometheus.io/scrape`, `prometheus.io/path`, and `prometheus.io/port`.
+When metrics are enabled, the auth, hooks, and registry pods and services are annotated with `prometheus.io/scrape`, `prometheus.io/path`, and `prometheus.io/port`.
 
 If you use the Prometheus Operator, you can also enable ServiceMonitor resources:
 
 ```yaml
 metrics:
+  enabled: true
   serviceMonitor:
     enabled: true
 ```
@@ -171,6 +177,7 @@ You can also enable bundled Prometheus alert rules for the auth and hooks metric
 
 ```yaml
 metrics:
+  enabled: true
   prometheusRule:
     enabled: true
 ```

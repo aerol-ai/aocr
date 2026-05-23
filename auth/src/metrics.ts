@@ -8,11 +8,19 @@ import {
   collectDefaultMetrics,
 } from 'prom-client';
 
+function parseBoolean(value?: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((value || '').trim().toLowerCase());
+}
+
+const metricsEnabled = parseBoolean(process.env.METRICS_ENABLED ?? 'false');
+
 const metricsRegistry = new Registry();
-collectDefaultMetrics({
-  prefix: 'aocr_auth_',
-  register: metricsRegistry,
-});
+if (metricsEnabled) {
+  collectDefaultMetrics({
+    prefix: 'aocr_auth_',
+    register: metricsRegistry,
+  });
+}
 
 let boundPool: Pool | null = null;
 
@@ -101,10 +109,18 @@ function resolveRouteLabel(req: express.Request): string {
 }
 
 export function bindMetricsPool(pool: Pool): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   boundPool = pool;
 }
 
 export function setConfiguredPatCount(count: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   configuredPatCount.set(count);
 }
 
@@ -113,23 +129,43 @@ export function elapsedSecondsSince(startNs: bigint): number {
 }
 
 export function recordTokenValidation(strategy: 'api' | 'pat', outcome: string, durationSeconds: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   tokenValidationTotal.inc({ strategy, outcome });
   tokenValidationDurationSeconds.observe({ strategy, outcome }, durationSeconds);
 }
 
 export function recordUpstreamValidation(outcome: string, durationSeconds: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   upstreamValidationDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
 export function recordDatabaseSync(outcome: string, durationSeconds: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   databaseSyncDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
 export function recordTokenIssuance(strategy: 'api' | 'pat' | 'unknown', outcome: string): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   tokenIssuanceTotal.inc({ strategy, outcome });
 }
 
 export function mountMetrics(app: express.Application): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   app.use((req, res, next) => {
     if (req.path === '/metrics') {
       next();

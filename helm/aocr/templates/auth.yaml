@@ -13,10 +13,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ include "aocr.name" . }}-auth
+      {{- if .Values.metrics.enabled }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
         prometheus.io/port: "{{ .Values.auth.port }}"
+      {{- end }}
     spec:
       containers:
       - name: auth
@@ -39,6 +41,8 @@ spec:
             secretKeyRef:
               name: {{ include "aocr.fullname" . }}-secrets
               key: postgres-password
+        - name: METRICS_ENABLED
+          value: {{ .Values.metrics.enabled | quote }}
         - name: VALIDATION_SERVICE_URL
           value: {{ .Values.auth.validationServiceUrl | quote }}
         - name: AUTH_PAT_TOKEN
@@ -64,10 +68,12 @@ metadata:
   labels:
     {{- include "aocr.labels" . | nindent 4 }}
     app.kubernetes.io/name: {{ include "aocr.name" . }}-auth
+  {{- if .Values.metrics.enabled }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "{{ .Values.auth.port }}"
+  {{- end }}
 spec:
   type: ClusterIP
   ports:

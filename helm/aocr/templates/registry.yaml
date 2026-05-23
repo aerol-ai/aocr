@@ -13,10 +13,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ include "aocr.name" . }}-registry
+      {{- if .Values.metrics.enabled }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
         prometheus.io/port: "5001"
+      {{- end }}
     spec:
       containers:
       - name: registry
@@ -25,11 +27,15 @@ spec:
         ports:
         - name: http
           containerPort: {{ .Values.registry.port }}
+        {{- if .Values.metrics.enabled }}
         - name: metrics
           containerPort: 5001
+        {{- end }}
         env:
         - name: PORT
           value: "{{ .Values.registry.port }}"
+        - name: METRICS_ENABLED
+          value: {{ .Values.metrics.enabled | quote }}
         - name: REPLREG_HOST
           value: "{{ .Values.global.domain }}"
         - name: REPLREG_SECRET
@@ -85,18 +91,22 @@ metadata:
   labels:
     {{- include "aocr.labels" . | nindent 4 }}
     app.kubernetes.io/name: {{ include "aocr.name" . }}-registry
+  {{- if .Values.metrics.enabled }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "5001"
+  {{- end }}
 spec:
   type: ClusterIP
   ports:
   - name: http
     port: {{ .Values.registry.port }}
     targetPort: {{ .Values.registry.port }}
+  {{- if .Values.metrics.enabled }}
   - name: metrics
     port: 5001
     targetPort: 5001
+  {{- end }}
   selector:
     app.kubernetes.io/name: {{ include "aocr.name" . }}-registry

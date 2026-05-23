@@ -39,6 +39,7 @@ auth:
     tokens: []
 
 metrics:
+  enabled: false
   serviceMonitor:
     enabled: false
     interval: 30s

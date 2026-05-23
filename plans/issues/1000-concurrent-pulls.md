@@ -91,10 +91,10 @@ Expected effect:
 
 Current branch status:
 
-- Registry Prometheus metrics are now enabled on the debug listener at [registry/config.yml#L24](../../../registry/config.yml#L24) and [registry/config.yml#L25](../../../registry/config.yml#L25).
-- The auth service now exposes `/metrics` with request, validation, upstream, DB-sync, token issuance, PAT-count, and Postgres pool metrics.
-- The hooks service now exposes `/metrics` with request, webhook, Redis, Postgres sync, and immediate reap metrics.
-- Helm now annotates scrape targets and can optionally create `ServiceMonitor` resources.
+- Registry Prometheus metrics are available behind the master metrics flag.
+- The auth service can expose `/metrics` with request, validation, upstream, DB-sync, token issuance, PAT-count, and Postgres pool metrics.
+- The hooks service can expose `/metrics` with request, webhook, Redis, Postgres sync, and immediate reap metrics.
+- Helm can annotate scrape targets and optionally create `ServiceMonitor` and `PrometheusRule` resources when metrics are enabled.
 
 Remaining gap:
 

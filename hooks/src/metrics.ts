@@ -8,11 +8,19 @@ import {
   collectDefaultMetrics,
 } from "prom-client";
 
+function parseBoolean(value?: string): boolean {
+  return ["1", "true", "yes", "on"].includes((value || "").trim().toLowerCase());
+}
+
+const metricsEnabled = parseBoolean(process.env.METRICS_ENABLED || "false");
+
 const metricsRegistry = new Registry();
-collectDefaultMetrics({
-  prefix: "aocr_hooks_",
-  register: metricsRegistry,
-});
+if (metricsEnabled) {
+  collectDefaultMetrics({
+    prefix: "aocr_hooks_",
+    register: metricsRegistry,
+  });
+}
 
 let boundPool: Pool | null = null;
 
@@ -120,6 +128,10 @@ function resolveRouteLabel(req: express.Request): string {
 }
 
 export function bindMetricsPool(pool: Pool): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   boundPool = pool;
 }
 
@@ -128,42 +140,82 @@ export function elapsedSecondsSince(startNs: bigint): number {
 }
 
 export function recordWebhookAuthorization(outcome: "accepted" | "rejected"): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   webhookAuthorizationTotal.inc({ outcome });
 }
 
 export function recordRegistryEvent(action: string): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   registryEventsTotal.inc({ action: action || "unknown" });
 }
 
 export function recordRegistryEventBatch(count: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   registryEventsPerRequest.observe(count);
 }
 
 export function recordRedisCache(outcome: string, durationSeconds: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   redisCacheDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
 export function recordPostgresSync(outcome: string, durationSeconds: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   postgresSyncDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
 export function recordImmediateReap(outcome: string, durationSeconds: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   immediateReapDurationSeconds.observe({ outcome }, durationSeconds);
 }
 
 export function recordRepositoriesScheduledForReap(count: number): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   repositoriesScheduledForReap.inc(count);
 }
 
 export function markSuccessfulWebhook(): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   lastSuccessfulWebhookTimestampSeconds.set(Date.now() / 1000);
 }
 
 export function markSuccessfulReap(): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   lastSuccessfulReapTimestampSeconds.set(Date.now() / 1000);
 }
 
 export function mountMetrics(app: { use: Function; get: Function }): void {
+  if (!metricsEnabled) {
+    return;
+  }
+
   app.use((req, res, next) => {
     if (req.path === "/metrics") {
       next();
