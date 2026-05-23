@@ -177,9 +177,10 @@ registryGc:
   enabled: true
   dryRun: false
   schedule: "0 3 * * *"
-  requireReadOnly: true
 ```
 This runs the official `registry garbage-collect` command during low-traffic windows.
+
+> **WARNING:** `registry garbage-collect` is unsafe to run against a registry that is accepting writes. Blobs uploaded after the scan starts can be deleted as orphans, corrupting in-flight pushes. Before flipping `dryRun: false`, quiesce the registry for the duration of the GC window — either scale the registry Deployment to 0 replicas, or set `storage.maintenance.readonly.enabled: true` in the registry config and roll the pods. The chart does not automate this; it is the operator's responsibility. See [upstream docs](https://distribution.github.io/distribution/about/garbage-collection/).
 
 Upgrade note:
 

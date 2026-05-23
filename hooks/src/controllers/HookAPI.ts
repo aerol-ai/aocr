@@ -48,6 +48,20 @@ export const UPDATE_LAST_PULLED_AT_SQL = `
     AND (i.last_pulled_at IS NULL OR i.last_pulled_at < CURRENT_TIMESTAMP - INTERVAL '1 hour')
 `;
 
+// Drop the Postgres row for a manifest the registry has reported as deleted.
+// Match by manifest_digest, not tag, because the registry emits one delete event
+// per manifest digest (tag-less). A single digest may be referenced by multiple
+// tags within the same repository — they all go away together when the manifest
+// is gone, so deleting every matching row is correct.
+export const DELETE_MANIFEST_SQL = `
+  DELETE FROM images i
+  USING repositories r
+  WHERE i.repository_id = r.id
+    AND r.organization = $1
+    AND r.name = $2
+    AND i.manifest_digest = $3
+`;
+
 @Controller("/v1/hook")
 export class HookAPI {
   /**
@@ -170,6 +184,33 @@ export class HookAPI {
           }
         } catch (err) {
           console.error('Error processing org/repo metadata:', err);
+        }
+      } else if (event.action === "delete") {
+        const image = event.target.repository;
+        const digest = typeof event?.target?.digest === "string" ? event.target.digest : null;
+
+        if (!image || !digest) {
+          continue;
+        }
+
+        try {
+          const parsed = inferredProvenance(image);
+          if (parsed) {
+            const { organization, name } = parsed;
+            const postgresStartedAt = process.hrtime.bigint();
+            const pgClient = await pool.connect();
+            try {
+              await pgClient.query(DELETE_MANIFEST_SQL, [organization, name, digest]);
+              recordPostgresSync("success", elapsedSecondsSince(postgresStartedAt));
+            } catch (err) {
+              recordPostgresSync("error", elapsedSecondsSince(postgresStartedAt));
+              console.error('Error syncing delete to Postgres:', err);
+            } finally {
+              pgClient.release();
+            }
+          }
+        } catch (err) {
+          console.error('Error processing delete metadata:', err);
         }
       } else if (event.action === "pull") {
         const image = event.target.repository;

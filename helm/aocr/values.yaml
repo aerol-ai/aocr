@@ -171,11 +171,29 @@ retention:
     - 180d
 
 # Registry GC Configuration
+#
+# WARNING — read this before flipping dryRun to false.
+#
+# `registry garbage-collect` walks S3 looking for blobs not referenced by any
+# manifest and deletes the orphans. If the registry is accepting writes while
+# the scan runs, blobs that started uploading AFTER the scan began can be
+# treated as orphans and deleted, corrupting in-flight pushes. Upstream
+# Distribution docs require the registry to be quiesced for the duration:
+#
+#   https://distribution.github.io/distribution/about/garbage-collection/
+#
+# Before setting dryRun: false, either
+#   (a) scale the registry Deployment to 0 replicas for the GC window, or
+#   (b) set storage.maintenance.readonly.enabled: true in the registry config
+#       and roll the registry pods.
+#
+# This chart does not currently automate either step — that coordination is
+# the operator's responsibility. dryRun stays true by default so the daily
+# CronJob only reports what it would have deleted.
 registryGc:
   enabled: true
   dryRun: true
   schedule: "0 3 * * *"
-  requireReadOnly: true
 
 # Web Frontend
 web:

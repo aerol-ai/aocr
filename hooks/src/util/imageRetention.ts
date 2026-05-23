@@ -153,6 +153,9 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
           AND i.provenance <> 'mirror'
       ),
       expired_ttl_images AS (
+        -- TTL applies uniformly across provenance. Mirror tags carrying an explicit
+        -- --ttl-* suffix should expire on time too, so this CTE no longer excludes mirror.
+        -- expired_mirror_idle_images excludes retention_mode = 'ttl' so there is no overlap.
         SELECT
           i.id,
           i.repository_id,
@@ -165,9 +168,12 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
         ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'ttl'
           AND i.expires_at IS NOT NULL
           AND i.expires_at <= CURRENT_TIMESTAMP
-          AND i.provenance <> 'mirror'
       ),
       expired_idle_images AS (
+        -- Idle expiry must fire even when last_pulled_at is null (the tag has never
+        -- been pulled — the maximum case of "idle"). Anchor the clock to the most
+        -- recent of last_pulled_at, last_pushed_at, created_at so the row's own
+        -- timestamps always provide a start time.
         SELECT
           i.id,
           i.repository_id,
@@ -178,12 +184,17 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
         FROM images i
         JOIN repositories r ON i.repository_id = r.id
         ${scope.query}${scope.query.length > 0 ? " AND" : " WHERE"} i.retention_mode = 'idle'
-          AND i.last_pulled_at IS NOT NULL
           AND i.retention_value_seconds IS NOT NULL
-          AND i.last_pulled_at + (i.retention_value_seconds || ' seconds')::interval <= CURRENT_TIMESTAMP
+          AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at)
+              + (i.retention_value_seconds || ' seconds')::interval <= CURRENT_TIMESTAMP
           AND i.provenance <> 'mirror'
       ),
       expired_mirror_idle_images AS (
+        -- Prefer the row's own retention_value_seconds (set when a mirror tag carries
+        -- an explicit --idle-* suffix) over the upstream-default retention from
+        -- mirror_resolved_retention. Most mirror tags have no suffix → retention_mode
+        -- stays 'keep-latest' and retention_value_seconds is null, in which case we
+        -- fall back to the upstream default via COALESCE.
         SELECT
           i.id,
           i.repository_id,
@@ -198,7 +209,7 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
           AND i.retention_mode <> 'ttl'
           AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at) IS NOT NULL
           AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at)
-              + (mrr.retention_seconds || ' seconds')::interval <= CURRENT_TIMESTAMP
+              + (COALESCE(i.retention_value_seconds, mrr.retention_seconds) || ' seconds')::interval <= CURRENT_TIMESTAMP
       )
       SELECT id, repository_id, tag, organization, name, manifest_digest
       FROM keep_latest_images

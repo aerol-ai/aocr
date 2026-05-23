@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 process.env["DATABASE_URL"] = process.env["DATABASE_URL"] || "postgres://test:test@127.0.0.1:5432/test";
 
-import { UPDATE_LAST_PULLED_AT_SQL } from "../src/controllers/HookAPI";
+import { DELETE_MANIFEST_SQL, UPDATE_LAST_PULLED_AT_SQL } from "../src/controllers/HookAPI";
 
 describe("UPDATE_LAST_PULLED_AT_SQL", () => {
   it("updates last_pulled_at", () => {
@@ -28,5 +28,22 @@ describe("UPDATE_LAST_PULLED_AT_SQL", () => {
   it("debounces writes with a one-hour guard so popular tags do not write-storm", () => {
     assert.match(UPDATE_LAST_PULLED_AT_SQL, /last_pulled_at\s+IS\s+NULL/i);
     assert.match(UPDATE_LAST_PULLED_AT_SQL, /INTERVAL\s+'1 hour'/i);
+  });
+});
+
+describe("DELETE_MANIFEST_SQL", () => {
+  it("deletes from images joined to repositories", () => {
+    assert.match(DELETE_MANIFEST_SQL, /DELETE\s+FROM\s+images/i);
+    assert.match(DELETE_MANIFEST_SQL, /USING\s+repositories/i);
+  });
+
+  it("matches by organization, name, and manifest_digest — never by tag", () => {
+    // The registry emits one delete event per manifest digest (tag-less). A digest
+    // can be referenced by multiple tags in the same repo; they all go away when
+    // the manifest is gone, so matching on digest reaps every affected row.
+    assert.match(DELETE_MANIFEST_SQL, /r\.organization\s*=\s*\$1/);
+    assert.match(DELETE_MANIFEST_SQL, /r\.name\s*=\s*\$2/);
+    assert.match(DELETE_MANIFEST_SQL, /i\.manifest_digest\s*=\s*\$3/);
+    assert.doesNotMatch(DELETE_MANIFEST_SQL, /i\.tag\s*=/);
   });
 });
