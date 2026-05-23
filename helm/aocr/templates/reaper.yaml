@@ -48,4 +48,12 @@ spec:
             - name: REPOSITORY_IDS
               value: {{ join "," .Values.reaper.repositoryIds | quote }}
             {{- end }}
+            {{- if .Values.mirror.enabled }}
+            - name: MIRROR_DEFAULT_IDLE_SECONDS
+              value: {{ .Values.mirror.defaultIdleSeconds | quote }}
+            {{- if .Values.mirror.retentionOverrides }}
+            - name: MIRROR_UPSTREAM_RETENTION_JSON
+              value: {{ .Values.mirror.retentionOverrides | toJson | quote }}
+            {{- end }}
+            {{- end }}
           restartPolicy: OnFailure

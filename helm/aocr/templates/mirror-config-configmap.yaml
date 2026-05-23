@@ -1,0 +1,60 @@
+{{- if .Values.mirror.enabled }}
+{{- if not .Values.mirror.allowList }}
+{{- fail "mirror.enabled is true but mirror.allowList is empty -- refusing to expose a public pull-through mirror. Populate mirror.allowList with at least one CIDR." }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aocr.fullname" . }}-mirror-config
+  labels:
+    {{- include "aocr.labels" . | nindent 4 }}
+data:
+  # Distribution config for the local writer sidecar. The proxy talks to this
+  # over 127.0.0.1:5050; nothing outside the Pod can reach it. Storage points at
+  # the same S3 bucket as the main registry, so cached layers are visible to
+  # the push vhost and to the registry GC job.
+  config.yml: |
+    version: 0.1
+
+    log:
+      level: info
+      formatter: text
+
+    storage:
+      delete:
+        enabled: true
+      s3:
+        region: {{ .Values.registry.s3.region }}
+        bucket: {{ .Values.registry.s3.bucket }}
+        regionendpoint: {{ .Values.registry.s3.endpoint }}
+        v4auth: true
+        rootdirectory: /
+
+    http:
+      addr: 127.0.0.1:5050
+      secret: {{ .Values.registry.replregSecret }}
+      headers:
+        X-Content-Type-Options: ["nosniff"]
+      debug:
+        addr: 127.0.0.1:5051
+        prometheus:
+          enabled: {{ .Values.metrics.enabled }}
+
+    auth:
+      htpasswd:
+        realm: writer
+        path: /etc/docker/registry/htpasswd
+
+    notifications:
+      events:
+        includereferences: true
+      endpoints:
+        - name: registry-hooks
+          disabled: false
+          url: http://{{ include "aocr.fullname" . }}-hooks:{{ .Values.hooks.port }}/v1/hook/registry-event
+          headers:
+            Authorization: ["Token {{ .Values.hooks.token }}"]
+          timeout: 1s
+          threshold: 10
+          backoff: 1s
+{{- end }}

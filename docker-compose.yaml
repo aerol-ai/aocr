@@ -73,6 +73,8 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=8000
       - HOOK_TOKEN=${HOOK_TOKEN:-placeholder}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-placeholder-internal}
+      - REGISTRY_URL=http://registry:5000
       - DATABASE_URL=postgres://${POSTGRES_USER:-aocr_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aocr}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -104,6 +106,8 @@ services:
       - REGISTRY_URL=http://registry:5000
       - "REAPER_SCHEDULE=${REAPER_SCHEDULE:-* * * * *}"
       - REPOSITORY_IDS=${REPOSITORY_IDS:-}
+      - MIRROR_DEFAULT_IDLE_SECONDS=${MIRROR_DEFAULT_IDLE_SECONDS:-2592000}
+      - MIRROR_UPSTREAM_RETENTION_JSON=${MIRROR_UPSTREAM_RETENTION_JSON:-}
     depends_on:
       - postgres
       - redis
@@ -161,6 +165,59 @@ services:
     volumes:
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./postgres/data:/var/lib/postgresql/data
+    networks:
+      - aocr-network
+
+  mirror-writer:
+    image: registry:2.8.3
+    container_name: aocr-mirror-writer
+    restart: always
+    env_file: ".env"
+    environment:
+      - REGISTRY_AUTH=silly
+      - REGISTRY_AUTH_SILLY_REALM=writer
+      - REGISTRY_AUTH_SILLY_SERVICE=mirror-writer
+      - REGISTRY_STORAGE_S3_REGION=${S3_REGION:-us-east-1}
+      - REGISTRY_STORAGE_S3_BUCKET=${S3_BUCKET:-aocr}
+      - REGISTRY_STORAGE_S3_REGIONENDPOINT=${S3_ENDPOINT:-http://minio:9000}
+      - REGISTRY_STORAGE_S3_ACCESSKEY=${AWS_ACCESS_KEY_ID:-minioadmin}
+      - REGISTRY_STORAGE_S3_SECRETKEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+      - REGISTRY_HTTP_ADDR=0.0.0.0:5050
+      - REGISTRY_HTTP_SECRET=${REPLREG_SECRET:-placeholder}
+      - REGISTRY_NOTIFICATIONS_ENDPOINTS_0_NAME=hooks
+      - REGISTRY_NOTIFICATIONS_ENDPOINTS_0_URL=http://hooks:8000/v1/hook/registry-event
+      - REGISTRY_NOTIFICATIONS_ENDPOINTS_0_HEADERS_Authorization=Token ${HOOK_TOKEN:-placeholder}
+      - REGISTRY_NOTIFICATIONS_ENDPOINTS_0_TIMEOUT=1s
+      - REGISTRY_NOTIFICATIONS_ENDPOINTS_0_THRESHOLD=10
+      - REGISTRY_NOTIFICATIONS_ENDPOINTS_0_BACKOFF=1s
+    expose:
+      - "5050"
+    depends_on:
+      - minio
+      - hooks
+    networks:
+      - aocr-network
+
+  mirror:
+    image: ${IMAGE_NAMESPACE:-ghcr.io/aerol-ai}/aocr-mirror:${IMAGE_TAG:-latest}
+    build:
+      context: mirror
+      dockerfile: Dockerfile
+    container_name: aocr-mirror
+    restart: always
+    pull_policy: always
+    env_file: ".env"
+    environment:
+      - MIRROR_LISTEN_ADDR=:5100
+      - MIRROR_WRITER_ADDR=http://mirror-writer:5050
+      # silly auth ignores the credentials but the proxy still sends them.
+      - MIRROR_WRITER_USERNAME=mirror
+      - MIRROR_WRITER_PASSWORD=mirror
+    ports:
+      - "5100:5100"
+    depends_on:
+      - mirror-writer
     networks:
       - aocr-network
 

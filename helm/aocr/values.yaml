@@ -76,11 +76,57 @@ redis:
 hooks:
   port: 8000
   token: "change-me"
+  # Bearer token for the hooks blob-presence API (F8). Callers must send
+  # `Authorization: Token <internalApiToken>`. Used by AerolVM mirror-aware
+  # imports to skip layer pushes that already exist in AOCR S3.
+  internalApiToken: "change-me-internal"
 
 reaper:
   schedule: "* * * * *"
   # Leave empty to sweep all repositories, or set repository UUIDs to limit the cron job scope.
   repositoryIds: []
+
+# Pull-through mirror (Phase 3). When enabled, exposes a separate vhost
+# (mirror.<global.domain> by default) that fronts public registries listed in
+# `mirror.upstreams` and persists every fetched layer to AOCR's S3 backend,
+# tagged with provenance='mirror' by the hooks service.
+#
+# IMPORTANT: when `mirror.enabled: true`, `mirror.allowList` MUST list at least
+# one CIDR. The template fails closed if the list is empty so a public mirror
+# is never accidentally exposed.
+mirror:
+  enabled: false
+  # Hostname for the mirror ingress. Leave empty to use `mirror.<global.domain>`.
+  host: ""
+  # Port the mirror proxy listens on inside the cluster.
+  port: 5100
+  # Source CIDRs allowed to hit the mirror (required when enabled).
+  allowList: []  # e.g. ["10.0.0.0/8", "172.16.0.0/12"]
+  # Bearer username/password the proxy uses to talk to the colocated writer
+  # sidecar (Distribution with silly auth). Pinned via Helm; nothing outside
+  # this Pod ever sees the writer port.
+  writerUsername: "mirror-writer"
+  writerPassword: "change-me-writer"
+  # Default idle retention for mirror-provenance content (seconds).
+  defaultIdleSeconds: 2592000  # 30 days
+  # Per-upstream idle retention overrides (seconds). Keys match `upstream_ref`
+  # path prefixes as stored by the proxy (e.g. "docker/library/").
+  retentionOverrides: {}
+  # Day-1 upstreams. Slugs must match those baked into mirror/upstream.go.
+  upstreams:
+    - docker
+    - ghcr
+    - gcr
+    - quay
+    - k8s
+  image:
+    repository: ""  # defaults to image.repository
+    tag: ""         # defaults to image.tag
+  writerImage: "registry:2.8.3"
+  resources: {}
+  # Cluster CIDR allow-list annotation name. Set for non-Traefik ingress
+  # controllers (e.g. nginx uses `nginx.ingress.kubernetes.io/whitelist-source-range`).
+  ingressAllowListAnnotation: "traefik.ingress.kubernetes.io/ip-allowlist-sourcerange"
 
 # Retention Configuration
 retention:
