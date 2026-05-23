@@ -31,6 +31,23 @@ interface ErrorResponse {
 const pool = createPool();
 bindMetricsPool(pool);
 
+// Update last_pulled_at on every pull, regardless of retention_mode. Mirror images
+// are stored as keep-latest but the reaper's mirror-idle expiry in imageRetention.ts
+// reads COALESCE(last_pulled_at, last_pushed_at, created_at) to decide if a cached
+// upstream image is still warm — filtering by retention_mode = 'idle' here meant
+// mirror entries aged out based on first-cache time instead of actual usage.
+// The hourly debounce prevents write storms when a popular tag is pulled repeatedly.
+export const UPDATE_LAST_PULLED_AT_SQL = `
+  UPDATE images i
+  SET last_pulled_at = CURRENT_TIMESTAMP
+  FROM repositories r
+  WHERE i.repository_id = r.id
+    AND r.organization = $1
+    AND r.name = $2
+    AND i.tag = $3
+    AND (i.last_pulled_at IS NULL OR i.last_pulled_at < CURRENT_TIMESTAMP - INTERVAL '1 hour')
+`;
+
 @Controller("/v1/hook")
 export class HookAPI {
   /**
@@ -170,17 +187,7 @@ export class HookAPI {
             const postgresStartedAt = process.hrtime.bigint();
             const pgClient = await pool.connect();
             try {
-              await pgClient.query(`
-                UPDATE images i
-                SET last_pulled_at = CURRENT_TIMESTAMP
-                FROM repositories r
-                WHERE i.repository_id = r.id
-                  AND r.organization = $1
-                  AND r.name = $2
-                  AND i.tag = $3
-                  AND i.retention_mode = 'idle'
-                  AND (i.last_pulled_at IS NULL OR i.last_pulled_at < CURRENT_TIMESTAMP - INTERVAL '1 hour')
-              `, [organization, name, tag]);
+              await pgClient.query(UPDATE_LAST_PULLED_AT_SQL, [organization, name, tag]);
               recordPostgresSync("success", elapsedSecondsSince(postgresStartedAt));
             } catch (err) {
               recordPostgresSync("error", elapsedSecondsSince(postgresStartedAt));
