@@ -77,7 +77,9 @@ registry:
   s3:
     region: "us-east-1"
     bucket: "aocr"
-    endpoint: "http://minio:9000"
+    # Empty = use AWS S3 (SDK derives the endpoint from region). Override only
+    # for S3-compatible backends like MinIO, e.g. "http://minio:9000".
+    endpoint: ""
     accessKey: ""
     secretKey: ""
 

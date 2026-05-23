@@ -15,6 +15,9 @@ aocr_global_domain: "YOUR_DOMAIN_HERE"
 # S3 Configuration
 aocr_registry_s3_region: "us-east-1"
 aocr_registry_s3_bucket: "YOUR_S3_BUCKET_NAME_HERE"
+# Leave empty for real AWS S3 (SDK derives the regional endpoint). Set only
+# for S3-compatible backends like MinIO, e.g. "http://minio:9000".
+# aocr_registry_s3_endpoint: ""
 
 aocr_auth_validationServiceUrl: "https://app.aerol.ai/api/auth/info"
 

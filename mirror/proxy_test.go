@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeWriter implements the bare minimum of the Distribution upload protocol:
@@ -293,4 +295,88 @@ func (r *rewriteToHTTP) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.URL.Scheme = "http"
 	}
 	return r.base.RoundTrip(req)
+}
+
+// TestProxyBlobFailSoftWhenWriterDown is the regression for the bug where a
+// dead writer sidecar (e.g. S3 endpoint misconfigured to a non-existent
+// "minio:9000" host) caused docker pulls to hang forever instead of failing
+// to cache. The proxy must still stream the full blob to the client; only
+// the cache write should be lost.
+func TestProxyBlobFailSoftWhenWriterDown(t *testing.T) {
+	upstream := &fakeUpstream{
+		manifestBody: []byte(`{"schemaVersion":2}`),
+		// Make the body large enough that io.Copy will issue multiple writes —
+		// the bug manifests on the *first* pipeW.Write after the upload goroutine
+		// has failed, so even a small body triggers it, but a larger body proves
+		// the client keeps receiving after the cache breaks.
+		blobBody: bytes.Repeat([]byte("A"), 256*1024),
+	}
+	upstreamServer := upstream.Server(t)
+	defer upstreamServer.Close()
+
+	// Failing writer: 500 on every POST blobs/uploads init, 404 on HEAD so the
+	// proxy always treats the blob as a cache miss.
+	failingWriter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		http.Error(w, "s3 unreachable", http.StatusInternalServerError)
+	}))
+	defer failingWriter.Close()
+
+	upstreamHost := strings.TrimPrefix(upstreamServer.URL, "http://")
+	cfg := &Config{
+		ListenAddr:           ":0",
+		WriterAddr:           failingWriter.URL,
+		UserAgent:            "test",
+		TokenCacheTTLSeconds: 60,
+	}
+	reg := NewRegistry(&stubUpstream{slug: "docker", host: upstreamHost})
+	httpClient := &http.Client{Transport: &rewriteToHTTP{base: http.DefaultTransport, replaceHost: upstreamHost}}
+	wr := NewWriter(cfg, &http.Client{})
+	metrics := NewMetrics()
+	proxy := NewProxy(cfg, reg, httpClient, wr, metrics)
+
+	srv := httptest.NewServer(proxy.Routes())
+	defer srv.Close()
+
+	blobDigest := "sha256:" + sha256Hex(upstream.blobBody)
+
+	// Bound the test so the previous bug (infinite hang) fails fast instead
+	// of timing out the whole test suite.
+	type result struct {
+		body []byte
+		code int
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := http.Get(srv.URL + "/v2/library/redis/blobs/" + blobDigest)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		done <- result{body: body, code: resp.StatusCode, err: err}
+	}()
+
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatalf("client GET errored: %v", res.err)
+		}
+		if res.code != 200 {
+			t.Fatalf("expected 200 from proxy, got %d", res.code)
+		}
+		if len(res.body) != len(upstream.blobBody) {
+			t.Fatalf("body length mismatch: got %d, want %d", len(res.body), len(upstream.blobBody))
+		}
+		if !bytes.Equal(res.body, upstream.blobBody) {
+			t.Fatalf("body bytes mismatch")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("client GET hung — writer failure should not deadlock the client (regression of mirror hang bug)")
+	}
 }

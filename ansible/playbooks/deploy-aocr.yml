@@ -131,6 +131,7 @@
           --set registry.replregSecret="{{ final_registry_replregSecret }}"
           --set registry.s3.region="{{ aocr_registry_s3_region }}"
           --set registry.s3.bucket="{{ aocr_registry_s3_bucket }}"
+          --set registry.s3.endpoint="{{ aocr_registry_s3_endpoint | default('') }}"
           --set registry.s3.accessKey="{{ resolved_aws_access_key }}"
           --set registry.s3.secretKey="{{ resolved_aws_secret_key }}"
           --set auth.validationServiceUrl="{{ aocr_auth_validationServiceUrl }}"
