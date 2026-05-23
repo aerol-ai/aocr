@@ -72,7 +72,7 @@ Two scopes, distinguished by the credential:
 ```bash
 # Admin (static PAT)
 curl -sS -H "Authorization: Bearer $AOCR_PAT" \
-  https://aocr.<domain>/v1/images?limit=50 | jq .
+  https://aocr.aerol.ai/v1/images?limit=50 | jq .
 
 # Per-user (token from your validation service)
 curl -sS -H "Authorization: Bearer $USER_TOKEN" \

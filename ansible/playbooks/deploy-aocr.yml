@@ -149,6 +149,48 @@
         KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
       changed_when: true
 
+    # Apply the latest schema against the existing Postgres before restarting
+    # the app pods. Postgres only runs /docker-entrypoint-initdb.d/*.sql on
+    # first boot; any ALTER TABLE added to init.sql later is missed unless we
+    # re-apply it explicitly. init.sql is fully idempotent.
+    - name: Resolve the Postgres pod name
+      ansible.builtin.command:
+        cmd: >
+          kubectl -n {{ aocr_namespace }}
+          get pod
+          -l app.kubernetes.io/name={{ aocr_helm_release_name }}-postgres
+          -o jsonpath={.items[0].metadata.name}
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      register: postgres_pod
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: postgres_pod.stdout | length > 0
+
+    - name: Copy latest init.sql onto the remote VM
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../helm/aocr/files/init.sql"
+        dest: "/tmp/aocr-init.sql"
+        mode: '0644'
+
+    - name: Apply schema to the live Postgres
+      ansible.builtin.shell:
+        cmd: >
+          kubectl -n {{ aocr_namespace }}
+          exec -i {{ postgres_pod.stdout }}
+          --
+          psql -v ON_ERROR_STOP=1 -U {{ aocr_postgres_user | default('aocr_user') }} -d {{ aocr_postgres_database | default('aocr') }}
+          < /tmp/aocr-init.sql
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      changed_when: true
+
+    - name: Remove staged init.sql
+      ansible.builtin.file:
+        path: "/tmp/aocr-init.sql"
+        state: absent
+
     - name: Force rollout restart of all deployments to pick up :latest images
       ansible.builtin.command:
         cmd: "kubectl -n {{ aocr_namespace }} rollout restart deployment"

@@ -1,0 +1,71 @@
+---
+# Apply the latest db/init.sql to the live Postgres pod.
+#
+# Why this exists:
+#   The chart mounts init.sql into /docker-entrypoint-initdb.d, but Postgres
+#   only executes that directory on FIRST boot (empty data dir). Any ALTER
+#   TABLE ... ADD COLUMN IF NOT EXISTS added to init.sql after the cluster
+#   was first provisioned never runs. This playbook is a manual catch-up:
+#   it pipes the local helm/aocr/files/init.sql into psql inside the pod.
+#
+# Safety:
+#   init.sql is fully idempotent (CREATE TABLE IF NOT EXISTS, ADD COLUMN IF
+#   NOT EXISTS, CREATE INDEX IF NOT EXISTS, plus value backfills gated on
+#   NULL). Re-running it against a populated DB is a no-op except for
+#   missing columns/indexes.
+#
+# Usage:
+#   ansible-playbook playbooks/apply-db-schema.yml
+
+- name: Apply latest Postgres schema to the live AOCR DB
+  hosts: all
+  gather_facts: false
+  vars:
+    aocr_init_sql_path: "{{ playbook_dir }}/../../helm/aocr/files/init.sql"
+
+  tasks:
+    - name: Resolve the Postgres pod name
+      ansible.builtin.command:
+        cmd: >
+          kubectl -n {{ aocr_namespace }}
+          get pod
+          -l app.kubernetes.io/name={{ aocr_helm_release_name }}-postgres
+          -o jsonpath={.items[0].metadata.name}
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      register: postgres_pod
+      changed_when: false
+
+    - name: Fail if no Postgres pod is running
+      ansible.builtin.assert:
+        that:
+          - postgres_pod.stdout | length > 0
+        fail_msg: "No pod with label app.kubernetes.io/name={{ aocr_helm_release_name }}-postgres in namespace {{ aocr_namespace }}."
+
+    - name: Copy latest init.sql onto the remote VM
+      ansible.builtin.copy:
+        src: "{{ aocr_init_sql_path }}"
+        dest: "/tmp/aocr-init.sql"
+        mode: '0644'
+
+    - name: Stream init.sql into the Postgres pod
+      ansible.builtin.shell:
+        cmd: >
+          kubectl -n {{ aocr_namespace }}
+          exec -i {{ postgres_pod.stdout }}
+          --
+          psql -v ON_ERROR_STOP=1 -U {{ aocr_postgres_user | default('aocr_user') }} -d {{ aocr_postgres_database | default('aocr') }}
+          < /tmp/aocr-init.sql
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
+      register: psql_result
+      changed_when: true
+
+    - name: Show psql output
+      ansible.builtin.debug:
+        var: psql_result.stdout_lines
+
+    - name: Remove staged init.sql
+      ansible.builtin.file:
+        path: "/tmp/aocr-init.sql"
+        state: absent
