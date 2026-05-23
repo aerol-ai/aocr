@@ -114,11 +114,15 @@
           --set auth.validationServiceUrl="{{ aocr_auth_validationServiceUrl }}"
           --set-file auth.jwtPrivateKey="/home/ubuntu/aocr-secrets/jwt-private.pem"
           --set-file auth.jwtPublicCertificate="/home/ubuntu/aocr-secrets/jwt-public.crt"
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
       changed_when: true
 
     - name: Verify Helm Release Status
       ansible.builtin.command:
         cmd: "helm status {{ aocr_helm_release_name }} -n {{ aocr_namespace }}"
+      environment:
+        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
       register: helm_status
       changed_when: false
 

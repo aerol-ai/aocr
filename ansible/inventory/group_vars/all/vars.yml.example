@@ -21,3 +21,9 @@ aocr_auth_validationServiceUrl: "https://app.aerol.ai/api/auth/info"
 # Paths to the JWT keys on the Ansible control node
 aocr_jwt_private_key_path: "{{ playbook_dir }}/../../secrets/jwt-private.pem"
 aocr_jwt_public_certificate_path: "{{ playbook_dir }}/../../secrets/jwt-public.crt"
+
+# Path to the kubeconfig on the remote VM (used by helm).
+# Default works for k3s. Override if you use a different distribution:
+#   microk8s: /var/snap/microk8s/current/credentials/client.config
+#   kubeadm:  /etc/kubernetes/admin.conf
+aocr_remote_kubeconfig: "/etc/rancher/k3s/k3s.yaml"

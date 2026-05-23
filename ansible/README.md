@@ -53,7 +53,7 @@ If you ever need to manually override these (e.g., specifying an AWS profile or 
 2. Execute the playbook, passing the **exact chart version** you want to deploy as an extra parameter (`-e`):
    ```bash
    cd ansible
-   ansible-playbook playbooks/deploy-aocr.yml -e "aocr_helm_chart_version=1.0.2-main.28"
+   ansible-playbook playbooks/deploy-aocr.yml -e "aocr_helm_chart_version=1.1.1-main.44"
    ```
 
 *Note: Passing `-e "aocr_helm_chart_version=..."` at the command line will automatically override whatever version is written in your `vars.yml`. This is the best way to do routine upgrades!*
