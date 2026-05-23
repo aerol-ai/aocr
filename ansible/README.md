@@ -40,7 +40,7 @@ This setup automatically handles password generation for you to prevent manual e
 
 When you run the playbook, it checks the ignored `secrets/` folder at the root of the project:
 - If `jwt-private.pem` & `jwt-public.crt` don't exist, it auto-generates them.
-- It auto-generates secure passwords for Postgres, Redis, Hooks, and the Registry if they are not provided, and saves them in plaintext inside the `secrets/` folder. This ensures the exact same passwords are automatically re-used on subsequent runs.
+- It auto-generates secure passwords for Postgres, Redis, Hooks, Auth PAT, and the Registry if they are not provided, and saves them in plaintext inside the `secrets/` folder. This ensures the exact same passwords are automatically re-used on subsequent runs.
 
 If you ever need to manually override these (e.g., specifying an AWS profile or hardcoding a Postgres password):
 1. Copy the example file:
@@ -59,3 +59,34 @@ If you ever need to manually override these (e.g., specifying an AWS profile or 
 *Note: Passing `-e "aocr_helm_chart_version=..."` at the command line will automatically override whatever version is written in your `vars.yml`. This is the best way to do routine upgrades!*
 
 The playbook will handle namespace creation, idempotent certificate generation, file syncing, environment injection, and Helm upgrades automatically.
+
+## Authentication: API + Admin PAT
+
+The registry supports two parallel authentication paths, and both are wired by this playbook:
+
+| Path | When it fires | Driven by | Used by |
+|------|---------------|-----------|---------|
+| **API auth** | The presented password does **not** match any configured PAT | `aocr_auth_validationServiceUrl` in `vars.yml` → `auth.validationServiceUrl` in the chart | End users — your control plane (`app.aerol.ai/api/auth/info`) issues short-lived tokens after a normal login |
+| **Static PAT** | The presented password matches a configured PAT (timing-safe compare) | `aocr_auth_pat_token` in `secrets.yml` → `auth.pat.token` in the chart | Admins / CI — the holder of the PAT logs in with `docker login` directly, bypassing the upstream API |
+
+Order of evaluation in the auth service: **PAT first, API as fallback**. PAT matches skip the Postgres user sync and use a synthetic `static-pat` subject.
+
+### Where the admin PAT lives
+
+On the first run, the playbook auto-generates a 64-char PAT and saves it to `<repo-root>/secrets/auth_pat_token`. Subsequent runs reuse that file, so the value stays stable.
+
+To look it up after deploy:
+```bash
+cat secrets/auth_pat_token
+```
+
+To override it explicitly, set `aocr_auth_pat_token` in `inventory/group_vars/all/secrets.yml`. Both single-token values and comma- or newline-separated multi-token lists are supported (the auth service splits on both), which is how you rotate or run multiple admin PATs side-by-side.
+
+### Using the PAT with docker
+
+```bash
+docker login <your-domain> -u admin -p "$(cat secrets/auth_pat_token)"
+docker push <your-domain>/org/repo:tag
+```
+
+The username field is ignored on the PAT path, so any non-empty string works. Treat the PAT like a root credential — anyone holding it gets full push/pull access.

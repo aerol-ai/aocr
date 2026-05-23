@@ -76,6 +76,7 @@
         final_redis_password: "{{ aocr_redis_password | default(lookup('password', playbook_dir + '/../../secrets/redis_password length=32 chars=ascii_letters,digits'), true) }}"
         final_hooks_token: "{{ aocr_hooks_token | default(lookup('password', playbook_dir + '/../../secrets/hooks_token length=64 chars=ascii_letters,digits'), true) }}"
         final_registry_replregSecret: "{{ aocr_registry_replregSecret | default(lookup('password', playbook_dir + '/../../secrets/registry_secret length=64 chars=ascii_letters,digits'), true) }}"
+        final_auth_pat_token: "{{ aocr_auth_pat_token | default(lookup('password', playbook_dir + '/../../secrets/auth_pat_token length=64 chars=ascii_letters,digits'), true) }}"
 
   tasks:
     - name: Create secrets directory on the remote VM
@@ -92,17 +93,6 @@
       loop:
         - "{{ aocr_jwt_private_key_path }}"
         - "{{ aocr_jwt_public_certificate_path }}"
-
-    - name: Authenticate Helm to ghcr.io using PAT
-      ansible.builtin.command:
-        cmd: "helm registry login ghcr.io -u {{ aocr_github_username }} -p {{ aocr_github_pat }}"
-      environment:
-        KUBECONFIG: "{{ aocr_remote_kubeconfig }}"
-      when: 
-        - aocr_github_pat is defined 
-        - aocr_github_pat != ''
-        - aocr_github_pat != 'YOUR_GITHUB_PAT'
-      changed_when: false
 
     - name: Run Helm Upgrade on the VM
       ansible.builtin.command:
@@ -123,6 +113,7 @@
           --set registry.s3.accessKey="{{ resolved_aws_access_key }}"
           --set registry.s3.secretKey="{{ resolved_aws_secret_key }}"
           --set auth.validationServiceUrl="{{ aocr_auth_validationServiceUrl }}"
+          --set-string auth.pat.token="{{ final_auth_pat_token }}"
           --set-file auth.jwtPrivateKey="/home/ubuntu/aocr-secrets/jwt-private.pem"
           --set-file auth.jwtPublicCertificate="/home/ubuntu/aocr-secrets/jwt-public.crt"
       environment:
