@@ -5,35 +5,45 @@ import { Check, Copy, Terminal } from "lucide-react";
 
 const examples = [
   {
-    title: "Docker Image",
-    description: "Authenticate with your app username or email, then push or pull a normal image tag",
+    title: "Docker image",
+    description: "Authenticate with a matching identity and push a plain tag that follows keep-latest cleanup",
     commands: [
-      "echo \"$AEROL_TOKEN\" | docker login aocr.aerol.ai -u \"$AEROL_LOGIN\" --password-stdin",
-      "docker build -t aocr.aerol.ai/aocr/my-app:main .",
-      "docker push aocr.aerol.ai/aocr/my-app:main",
-      "docker pull aocr.aerol.ai/aocr/my-app:main",
+      "export AOCR_REGISTRY=registry.example.com",
+      "echo \"$AOCR_TOKEN\" | docker login \"$AOCR_REGISTRY\" -u \"$AOCR_LOGIN\" --password-stdin",
+      "docker build -t \"${AOCR_REGISTRY}/team/my-app:main\" .",
+      "docker push \"${AOCR_REGISTRY}/team/my-app:main\"",
+      "docker pull \"${AOCR_REGISTRY}/team/my-app:main\"",
     ],
   },
   {
-    title: "Helm Chart",
-    description: "Authenticate first, then push OCI Helm charts",
+    title: "Helm chart",
+    description: "Authenticate once, then distribute Helm charts through the same OCI registry",
     commands: [
-      "echo \"$AEROL_TOKEN\" | helm registry login aocr.aerol.ai -u \"$AEROL_LOGIN\" --password-stdin",
+      "export AOCR_REGISTRY=registry.example.com",
+      "echo \"$AOCR_TOKEN\" | helm registry login \"$AOCR_REGISTRY\" -u \"$AOCR_LOGIN\" --password-stdin",
       "helm package ./my-chart",
-      "helm push my-chart-0.1.0.tgz oci://aocr.aerol.ai/charts",
-      "helm install my-release oci://aocr.aerol.ai/charts/my-chart --version 0.1.0",
+      "helm push my-chart-0.1.0.tgz oci://${AOCR_REGISTRY}/charts",
+      "helm install my-release oci://${AOCR_REGISTRY}/charts/my-chart --version 0.1.0",
     ],
   },
   {
-    title: "GitHub Actions",
-    description: "Validate a token in CI before pushing standard tags",
+    title: "TTL release",
+    description: "Push release-candidate images that expire automatically after a fixed time window",
     commands: [
-      "- name: Log in to aerol registry",
-      "  run: echo \"${{ secrets.AEROL_TOKEN }}\" | docker login aocr.aerol.ai -u \"${{ secrets.AEROL_LOGIN }}\" --password-stdin",
-      "- name: Build and push",
-      "  run: |",
-      "    docker build -t aocr.aerol.ai/aocr/my-app:${{ github.sha }} .",
-      "    docker push aocr.aerol.ai/aocr/my-app:${{ github.sha }}",
+      "export AOCR_REGISTRY=registry.example.com",
+      "docker build -t \"${AOCR_REGISTRY}/team/my-app:${GIT_SHA}--ttl-7d\" .",
+      "docker push \"${AOCR_REGISTRY}/team/my-app:${GIT_SHA}--ttl-7d\"",
+      "curl -sS -H \"Authorization: Bearer $AOCR_TOKEN\" https://auth.example.com/v1/images | jq .",
+    ],
+  },
+  {
+    title: "Idle preview",
+    description: "Keep preview images only while they are still being pulled",
+    commands: [
+      "export AOCR_REGISTRY=registry.example.com",
+      "docker build -t \"${AOCR_REGISTRY}/team/my-app:preview-123--idle-30d\" .",
+      "docker push \"${AOCR_REGISTRY}/team/my-app:preview-123--idle-30d\"",
+      "docker pull \"${AOCR_REGISTRY}/team/my-app:preview-123--idle-30d\"",
     ],
   },
 ];
@@ -56,87 +66,72 @@ export function HowTo() {
   };
 
   return (
-    <section id="how-it-works" className="relative py-32 px-4">
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-              Ridiculously
-            </span>{" "}
-            <span className="bg-gradient-to-r from-accent to-accent/70 bg-clip-text text-transparent">
-              simple
-            </span>
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Use your app.aerol.ai username, or email if no username exists, together with a validated token.
-            <br />
-            The internal hook secret never leaves the registry stack; end users only need their app login identity and token.
-          </p>
+    <section id="how-it-works" className="relative px-4 py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-accent">Wire it up</p>
+            <h2 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+              Standard Docker and Helm commands, with cleanup-aware tags.
+            </h2>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {examples.map((example, i) => (
+              <button
+                key={i}
+                onClick={() => setActiveTab(i)}
+                className={`min-h-11 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === i
+                    ? "bg-accent text-accent-foreground"
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+                aria-pressed={activeTab === i}
+              >
+                {example.title}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap justify-center gap-2 mb-8">
-          {examples.map((example, i) => (
-            <button
-              key={i}
-              onClick={() => setActiveTab(i)}
-              className={`px-5 py-2.5 rounded-lg font-medium transition-all ${
-                activeTab === i
-                  ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20"
-                  : "bg-muted/50 text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {example.title}
-            </button>
-          ))}
-        </div>
-
-        {/* Code block */}
-        <div className="bg-card border border-border/50 rounded-2xl overflow-hidden shadow-2xl">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/30">
-            <div className="flex items-center gap-3">
-              <Terminal className="w-5 h-5 text-accent" />
-              <span className="font-medium">{examples[activeTab].description}</span>
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
+            <div className="flex items-center gap-2.5">
+              <Terminal className="h-4 w-4 text-accent" strokeWidth={1.75} />
+              <span className="text-sm text-muted-foreground">{examples[activeTab].description}</span>
             </div>
             <button
               onClick={copyAll}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-accent/10 hover:bg-accent/20 text-accent text-sm font-medium transition-colors"
+              className="flex items-center gap-2 rounded-md bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/20"
             >
               {copiedIndex === -1 ? (
                 <>
-                  <Check className="w-4 h-4" />
-                  Copied!
+                  <Check className="h-4 w-4" />
+                  Copied
                 </>
               ) : (
                 <>
-                  <Copy className="w-4 h-4" />
+                  <Copy className="h-4 w-4" />
                   Copy all
                 </>
               )}
             </button>
           </div>
-          <div className="p-6 font-mono text-sm space-y-2 overflow-x-auto">
+          <div className="space-y-2 overflow-x-auto p-5 font-mono text-sm">
             {examples[activeTab].commands.map((cmd, i) => (
-              <div key={i} className="flex items-center gap-3 group">
-                {!cmd.startsWith("  ") && !cmd.startsWith("-") && (
-                  <span className="text-accent select-none font-bold">$</span>
-                )}
-                <code className={`flex-1 ${cmd.startsWith("  ") || cmd.startsWith("-") ? "text-muted-foreground" : "text-foreground"}`}>
-                  {cmd}
-                </code>
-                {!cmd.startsWith("  ") && (
-                  <button
-                    onClick={() => copyToClipboard(cmd, i)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-accent/10 rounded-md"
-                    aria-label="Copy command"
-                  >
-                    {copiedIndex === i ? (
-                      <Check className="w-4 h-4 text-accent" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-muted-foreground" />
-                    )}
-                  </button>
-                )}
+              <div key={i} className="group flex items-center gap-3">
+                <span className="select-none font-bold text-accent">$</span>
+                <code className="flex-1 text-foreground">{cmd}</code>
+                <button
+                  onClick={() => copyToClipboard(cmd, i)}
+                  className="rounded-md p-1.5 opacity-0 transition-opacity hover:bg-accent/10 group-hover:opacity-100 focus-visible:opacity-100"
+                  aria-label="Copy command"
+                >
+                  {copiedIndex === i ? (
+                    <Check className="h-4 w-4 text-accent" />
+                  ) : (
+                    <Copy className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
               </div>
             ))}
           </div>

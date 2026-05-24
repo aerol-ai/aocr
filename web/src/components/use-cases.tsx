@@ -1,74 +1,98 @@
 "use client";
 
-import { GitBranch, TestTube, Users, Boxes } from "lucide-react";
+import { useState } from "react";
+import { Boxes, ChevronDown, Clock, GitBranch, Globe, ShieldCheck, Users } from "lucide-react";
 
 const useCases = [
   {
+    icon: ShieldCheck,
+    title: "Bring-your-own-auth",
+    description:
+      "Plug AOCR into an existing control plane that already issues user tokens. AOCR only needs the auth-info contract.",
+  },
+  {
     icon: GitBranch,
-    title: "CI/CD Pipelines",
-    description: "Build once, publish a commit tag, and let your server or cluster pull the image you just shipped.",
-    highlight: "Direct deploy handoff",
-  },
-  {
-    icon: TestTube,
-    title: "Release Validation",
-    description: "Push candidate tags during validation and keep the repository trimmed to the newest artifact automatically.",
-    highlight: "Current image stays current",
-  },
-  {
-    icon: Users,
-    title: "Team-owned Registries",
-    description: "Tie repository access to your auth service and keep audit-friendly ownership in PostgreSQL metadata.",
-    highlight: "Owned access model",
+    title: "CI/CD release channels",
+    description:
+      "Publish commit, branch, or release-candidate tags and let keep-latest or TTL cleanup remove stale artifacts.",
   },
   {
     icon: Boxes,
-    title: "Local Development",
-    description: "Run the full stack with Docker Compose, including Postgres, Redis, Minio, hooks, auth, and the registry itself.",
-    highlight: "Single-stack dev setup",
+    title: "Helm and OCI charts",
+    description:
+      "Distribute application charts through the same registry, auth boundary, and retention model as container images.",
+  },
+  {
+    icon: Globe,
+    title: "Mirror-backed delivery",
+    description:
+      "Pull-through mirror support and provenance tracking let AOCR handle cached upstream content alongside direct pushes.",
+  },
+  {
+    icon: Clock,
+    title: "Preview environments",
+    description:
+      "Use idle-based tags for previews that should disappear after traffic stops instead of after a fixed deadline.",
+  },
+  {
+    icon: Users,
+    title: "Self-hosted platforms",
+    description:
+      "Run the full registry, hooks, reaper, Postgres, and S3-compatible storage stack in Kubernetes or Docker Compose.",
   },
 ];
 
 export function UseCases() {
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
+
+  const toggle = (i: number) => {
+    setOpenIndex((current) => (current === i ? null : i));
+  };
+
   return (
-    <section className="relative py-32 px-4 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-muted/30 via-background to-muted/30" />
-      
-      <div className="relative z-10 max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Built for{" "}
-            <span className="bg-gradient-to-r from-accent to-accent/70 bg-clip-text text-transparent">
-              real workflows
-            </span>
+    <section className="relative px-4 py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-10 max-w-2xl">
+          <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-accent">Use cases</p>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+            Built for real workflows, not demos.
           </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            From single servers to Kubernetes clusters,
-            <br />
-            aocr fits wherever you need a controlled OCI registry.
-          </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-8">
-          {useCases.map((useCase, i) => (
-            <div
-              key={i}
-              className="group relative p-8 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm hover:bg-card/50 transition-all duration-300"
-            >
-              <div className="flex items-start gap-5">
-                <div className="shrink-0 p-3 rounded-xl bg-accent/10 text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
-                  <useCase.icon className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold mb-2">{useCase.title}</h3>
-                  <p className="text-muted-foreground mb-4 leading-relaxed">{useCase.description}</p>
-                  <span className="inline-block px-3 py-1 rounded-full bg-accent/10 text-accent text-sm font-medium">
-                    {useCase.highlight}
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          {useCases.map((useCase, i) => {
+            const isOpen = openIndex === i;
+            const panelId = `usecase-panel-${i}`;
+            return (
+              <div
+                key={i}
+                className={`rounded-lg border transition-colors ${
+                  isOpen ? "border-accent/40 bg-card/60" : "border-border bg-card/30 hover:border-accent/30"
+                }`}
+              >
+                <button
+                  onClick={() => toggle(i)}
+                  className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                  aria-expanded={isOpen}
+                  aria-controls={panelId}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <useCase.icon className="h-4 w-4 shrink-0 text-accent" strokeWidth={1.75} />
+                    <span className="text-sm font-medium text-foreground">{useCase.title}</span>
                   </span>
-                </div>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    strokeWidth={1.75}
+                  />
+                </button>
+                {isOpen && (
+                  <div id={panelId} className="border-t border-border/60 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+                    {useCase.description}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

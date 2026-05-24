@@ -1,131 +1,166 @@
 "use client";
 
-import { Camera, KeyRound, ShieldCheck, UserRound } from "lucide-react";
+import { KeyRound, ShieldCheck, UserRound, Workflow } from "lucide-react";
 
 const steps = [
   {
-    icon: KeyRound,
-    title: "Create a registry token in app.aerol.ai",
+    icon: Workflow,
+    title: "Point AOCR at your auth host",
     description:
-      "Users sign in to app.aerol.ai and generate the token they will use as the password for Docker or Helm.",
+      "Configure VALIDATION_SERVICE_URL to your identity layer. AOCR validates presented tokens by calling your auth host's auth-info endpoint.",
     detail:
-      "That token is what the auth service validates before it issues the registry JWT.",
+      "If the configured host does not already end with /api/auth/info, AOCR appends that path automatically.",
   },
   {
     icon: UserRound,
-    title: "Use your app identity as the login name",
+    title: "Use the token as the password",
     description:
-      "For `docker login -u`, use the same app.aerol.ai username shown on the account. If that account does not expose a username, use the validated email instead.",
+      "Docker and Helm clients present Basic auth. The token is the password, and the login name only has to match the validated profile.",
     detail:
-      "The login name is not the secret. It just has to match the token-validated user profile.",
+      "AOCR accepts a presented identity that matches externalId, username, or email from the auth-info response.",
   },
   {
     icon: ShieldCheck,
-    title: "Log in to aocr.aerol.ai and push",
+    title: "Let AOCR issue the registry JWT",
     description:
-      "After login succeeds, push images or Helm charts to `aocr.aerol.ai`. The separate hook secret stays inside the cluster and is never entered by end users.",
+      "After validation succeeds, AOCR returns a Docker-compatible bearer token so users can push images or Helm charts with normal OCI tooling.",
     detail:
-      "The Helm `hooks.token` only secures registry-to-hooks callbacks after a push has already been accepted.",
+      "Internal hook secrets, cluster PATs, and other deployment-only credentials stay inside the registry stack.",
   },
 ];
 
-const screenshotPlaceholders = [
+const contractCards = [
   {
-    title: "Screenshot Placeholder: token page",
-    caption: "Replace this with the app.aerol.ai screen where users create or copy their registry token.",
+    title: "Validation request",
+    body: [
+      "GET https://auth.example.com/api/auth/info",
+      "Authorization: Bearer <presented token>",
+    ],
   },
   {
-    title: "Screenshot Placeholder: username or profile page",
-    caption: "Replace this with the app.aerol.ai screen that shows the username or email users should pass to `docker login -u`.",
+    title: "Expected response shape",
+    body: [
+      "{",
+      '  "user": {',
+      '    "id": "user_123",',
+      '    "username": "suman",',
+      '    "email": "suman@example.com"',
+      "  },",
+      '  "authProvider": "custom-sso"',
+      "}",
+    ],
   },
 ];
 
-function ScreenshotPlaceholder({ title, caption }: { title: string; caption: string }) {
+function ContractCard({ title, body }: { title: string; body: string[] }) {
   return (
-    <div className="rounded-3xl border border-border/50 bg-card/40 p-5 backdrop-blur-sm">
-      <div className="flex aspect-[16/10] flex-col items-center justify-center rounded-2xl border border-dashed border-accent/30 bg-gradient-to-br from-accent/10 via-transparent to-accent/5 px-6 text-center">
-        <Camera className="h-8 w-8 text-accent" />
-        <p className="mt-4 text-base font-semibold">{title}</p>
-        <p className="mt-2 max-w-sm text-sm text-muted-foreground">{caption}</p>
-      </div>
-      <p className="mt-3 text-xs text-muted-foreground">Drop your final screenshot into this panel later.</p>
+    <div className="rounded-lg border border-border bg-card/40 p-4">
+      <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-accent">{title}</p>
+      <pre className="overflow-x-auto rounded-md bg-muted/40 p-3 text-sm leading-6 text-foreground/90">
+        <code>{body.join("\n")}</code>
+      </pre>
     </div>
   );
 }
 
 export function TokenAccess() {
   return (
-    <section id="token-access" className="relative overflow-hidden px-4 py-32">
-      <div className="absolute inset-0 bg-gradient-to-b from-background via-muted/20 to-background" />
-
-      <div className="relative z-10 mx-auto max-w-6xl">
-        <div className="mx-auto mb-16 max-w-3xl text-center">
-          <h2 className="mb-4 text-4xl font-bold md:text-5xl">
-            Token-based{" "}
-            <span className="bg-gradient-to-r from-accent to-accent/70 bg-clip-text text-transparent">
-              access
-            </span>
+    <section id="token-access" className="relative px-4 py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-10 max-w-2xl">
+          <p className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-accent">
+            <KeyRound className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span>Token-based access</span>
+          </p>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+            AOCR does not require one specific identity product.
           </h2>
-          <p className="text-xl text-muted-foreground">
-            End users do not need the Helm hook secret. They need two things only: a token from app.aerol.ai and
-            a login identity that matches that same app profile.
+          <p className="mt-3 text-base text-muted-foreground">
+            Any auth layer that exposes the auth-info contract below can sit in front of AOCR.
           </p>
         </div>
 
-        <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-6">
+        <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-5">
             {steps.map((step, index) => (
               <div
                 key={step.title}
-                className="rounded-3xl border border-border/50 bg-card/40 p-6 backdrop-blur-sm"
+                className="flex gap-4 rounded-lg border border-border bg-card/30 p-5"
               >
-                <div className="flex items-start gap-4">
-                  <div className="rounded-2xl bg-accent/10 p-3 text-accent">
-                    <step.icon className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-sm font-medium uppercase tracking-[0.2em] text-accent/70">
-                      Step {index + 1}
-                    </p>
-                    <h3 className="text-2xl font-semibold">{step.title}</h3>
-                    <p className="mt-3 leading-relaxed text-muted-foreground">{step.description}</p>
-                    <p className="mt-3 text-sm text-foreground/80">{step.detail}</p>
-                  </div>
+                <step.icon className="mt-0.5 h-5 w-5 shrink-0 text-accent" strokeWidth={1.75} />
+                <div>
+                  <p className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    Step {index + 1}
+                  </p>
+                  <h3 className="text-lg font-semibold text-foreground">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.description}</p>
+                  <p className="mt-2 text-sm text-foreground/75">{step.detail}</p>
                 </div>
               </div>
             ))}
+          </div>
 
-            <div className="rounded-3xl border border-border/50 bg-card/70 shadow-2xl">
-              <div className="border-b border-border/50 px-6 py-4">
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-accent">Copyable login flow</p>
-              </div>
-              <div className="space-y-3 p-6 font-mono text-sm">
-                <div className="flex gap-3">
-                  <span className="font-bold text-accent">$</span>
-                  <code className="flex-1 text-foreground">
-                    echo "$AEROL_TOKEN" | docker login aocr.aerol.ai -u "$AEROL_LOGIN" --password-stdin
-                  </code>
-                </div>
-                <div className="flex gap-3">
-                  <span className="font-bold text-accent">$</span>
-                  <code className="flex-1 text-foreground">docker build -t aocr.aerol.ai/aocr/my-app:main .</code>
-                </div>
-                <div className="flex gap-3">
-                  <span className="font-bold text-accent">$</span>
-                  <code className="flex-1 text-foreground">docker push aocr.aerol.ai/aocr/my-app:main</code>
-                </div>
+          <div className="space-y-5">
+            {contractCards.map((card) => (
+              <ContractCard key={card.title} title={card.title} body={card.body} />
+            ))}
+
+            <div className="rounded-lg border border-border bg-card/40 p-5">
+              <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-accent">Identity match rules</p>
+              <div className="space-y-2.5 text-sm leading-relaxed text-muted-foreground">
+                <p>
+                  Required: <span className="font-mono text-foreground/90">user.id</span>
+                </p>
+                <p>
+                  Recommended for human login flows:{" "}
+                  <span className="font-mono text-foreground/90">user.username</span> and/or{" "}
+                  <span className="font-mono text-foreground/90">user.email</span>
+                </p>
+                <p>
+                  Presented login values from <span className="font-mono text-foreground/90">docker login -u</span> or the
+                  token endpoint <span className="font-mono text-foreground/90">account</span> query must match one of
+                  those validated fields.
+                </p>
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="space-y-6">
-            {screenshotPlaceholders.map((placeholder) => (
-              <ScreenshotPlaceholder
-                key={placeholder.title}
-                title={placeholder.title}
-                caption={placeholder.caption}
-              />
-            ))}
+        <div className="mt-10 rounded-lg border border-border bg-card/40">
+          <div className="border-b border-border px-5 py-3">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-accent">Copyable login flow</p>
+          </div>
+          <div className="space-y-2 p-5 font-mono text-sm">
+            <div className="flex gap-3">
+              <span className="font-bold text-accent">$</span>
+              <code className="flex-1 text-foreground">export AOCR_REGISTRY=&quot;registry.example.com&quot;</code>
+            </div>
+            <div className="flex gap-3">
+              <span className="font-bold text-accent">$</span>
+              <code className="flex-1 text-foreground">export AOCR_LOGIN=&quot;user@example.com&quot;</code>
+            </div>
+            <div className="flex gap-3">
+              <span className="font-bold text-accent">$</span>
+              <code className="flex-1 text-foreground">export AOCR_TOKEN=&quot;issued-by-your-auth-layer&quot;</code>
+            </div>
+            <div className="flex gap-3">
+              <span className="font-bold text-accent">$</span>
+              <code className="flex-1 text-foreground">
+                echo &quot;$AOCR_TOKEN&quot; | docker login &quot;$AOCR_REGISTRY&quot; -u &quot;$AOCR_LOGIN&quot; --password-stdin
+              </code>
+            </div>
+            <div className="flex gap-3">
+              <span className="font-bold text-accent">$</span>
+              <code className="flex-1 text-foreground">
+                docker build -t &quot;${"{"}AOCR_REGISTRY{"}"}/team/my-app:main--ttl-7d&quot; .
+              </code>
+            </div>
+            <div className="flex gap-3">
+              <span className="font-bold text-accent">$</span>
+              <code className="flex-1 text-foreground">
+                docker push &quot;${"{"}AOCR_REGISTRY{"}"}/team/my-app:main--ttl-7d&quot;
+              </code>
+            </div>
           </div>
         </div>
       </div>

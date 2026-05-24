@@ -5,77 +5,59 @@ import { Shield, Zap, Globe, Lock, Clock, Workflow } from "lucide-react";
 const features = [
   {
     icon: Shield,
-    title: "Authenticated Access",
-    description: "Users log in with their app username or email plus a validated token, and internal signed hooks keep post-push metadata updates trusted.",
-    gradient: "from-slate-400 to-slate-500",
+    title: "Pluggable token auth",
+    description: "Point VALIDATION_SERVICE_URL at your auth host and let AOCR validate presented tokens against /api/auth/info.",
   },
   {
     icon: Clock,
-    title: "Policy-Based Retention",
-    description: "Supports keep-latest, age-based TTL, and pull-activity idle tracking.",
-    gradient: "from-sky-600 to-blue-700",
+    title: "Built-in cleanup modes",
+    description: "Plain tags stay latest-only. --ttl-* expires by age. --idle-* expires by inactivity.",
   },
   {
     icon: Zap,
-    title: "Blazing Fast",
-    description: "A small service surface with registry notifications keeps image publishing and cleanup straightforward.",
-    gradient: "from-slate-500 to-zinc-600",
+    title: "Mirror-aware provenance",
+    description: "AOCR models pushed, mirrored, and cluster-snapshot artifacts so inventory and retention cover more than direct pushes.",
   },
   {
     icon: Globe,
-    title: "OCI Compatible",
-    description: "Works with Docker, Helm, and other OCI-native tooling. Standard tags in, standard pulls out.",
-    gradient: "from-blue-500 to-indigo-600",
+    title: "OCI compatible",
+    description: "Works with Docker, Helm, and other OCI-native tooling. Standard clients in, standard pulls and pushes out.",
   },
   {
     icon: Lock,
-    title: "S3-backed Storage",
-    description: "Manifests and blobs live in S3-compatible storage while PostgreSQL keeps the metadata model clean.",
-    gradient: "from-slate-600 to-slate-700",
+    title: "Inventory and ownership model",
+    description: "Manifests and blobs live in S3-compatible storage; PostgreSQL tracks users, repositories, pulls, digests, expiry, and provenance.",
   },
   {
     icon: Workflow,
-    title: "CI/CD Native",
-    description: "The repository now ships with GitHub Actions for build, GHCR publish, and SSH deployment to your server.",
-    gradient: "from-indigo-500 to-blue-600",
+    title: "Self-hosted by default",
+    description: "Run the stack locally with Docker Compose or deploy with Helm and Ansible, complete with hooks, reaping, and observability.",
   },
 ];
 
 export function Features() {
   return (
-    <section id="features" className="relative py-32 px-4">
-      <div className="absolute inset-0 bg-gradient-to-b from-background via-muted/30 to-background" />
-      
-      <div className="relative z-10 max-w-6xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Why developers{" "}
-            <span className="bg-gradient-to-r from-accent to-accent/70 bg-clip-text text-transparent">
-              love it
-            </span>
+    <section id="features" className="relative px-4 py-20">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-12 max-w-2xl">
+          <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-accent">What you get</p>
+          <h2 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+            Own the auth boundary. Let the registry own lifecycle.
           </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Built for controlled delivery instead of throwaway tags.
-            <br />
-            Push a normal image and let the platform keep the current one.
-          </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid gap-x-10 gap-y-10 md:grid-cols-2">
           {features.map((feature, i) => (
-            <div
-              key={i}
-              className="group relative p-8 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-accent/30 transition-all duration-300 hover:shadow-xl hover:shadow-accent/5"
-            >
-              <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${feature.gradient} mb-4`}>
-                <feature.icon className="w-6 h-6 text-white" />
+            <div key={i} className="flex gap-4">
+              <feature.icon className="mt-0.5 h-5 w-5 shrink-0 text-accent" strokeWidth={1.75} />
+              <div>
+                <h3 className="mb-1.5 text-base font-semibold text-foreground">
+                  {feature.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {feature.description}
+                </p>
               </div>
-              <h3 className="text-xl font-semibold mb-2 group-hover:text-accent transition-colors">
-                {feature.title}
-              </h3>
-              <p className="text-muted-foreground leading-relaxed">
-                {feature.description}
-              </p>
             </div>
           ))}
         </div>
