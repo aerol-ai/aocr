@@ -116,17 +116,6 @@ export function TokenAccess() {
                 </div>
               </div>
             </div>
-
-            <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">
-                Important
-              </p>
-              <p className="mt-3 leading-relaxed text-muted-foreground">
-                The Helm value <code className="font-mono text-foreground">hooks.token</code> is not a user login
-                credential. It is only the internal shared secret the registry uses when it calls the hooks service
-                after a successful push.
-              </p>
-            </div>
           </div>
 
           <div className="space-y-6">
