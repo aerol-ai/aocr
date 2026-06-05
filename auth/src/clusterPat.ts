@@ -1,4 +1,12 @@
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Cluster IDs are operator-chosen labels, not UUIDs. This MUST stay in sync
+// with the sandbox-library constraint on `SB_AUTO_IMPORT_CLUSTER_ID`
+// (`^[A-Za-z0-9_-]{1,64}$`): the same string is the registry path segment
+// (`cluster/<id>/...`) on the AerolVM push side and the namespace this PAT is
+// scoped to here. UUIDs still match (they are a subset), so pre-existing
+// UUID-keyed entries keep working. The character class is deliberately
+// path-safe — anything outside it could break `cluster/<id>/` prefix matching
+// in evaluateClusterPatScope.
+const CLUSTER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 export interface ClusterPatEntry {
   clusterId: string;
@@ -15,8 +23,9 @@ export interface ClusterPatScopeDecision {
  * Parse the AUTH_CLUSTER_PAT_TOKENS env value.
  *
  * Expected format: newline- or comma-separated entries of `<cluster_id>=<token>`,
- * where `<cluster_id>` is a UUID. Malformed entries are skipped (with a warning).
- * If multiple entries share the same `<cluster_id>`, the last one wins.
+ * where `<cluster_id>` matches `^[A-Za-z0-9_-]{1,64}$` (the AerolVM cluster
+ * label; UUIDs are a valid subset). Malformed entries are skipped (with a
+ * warning). If multiple entries share the same `<cluster_id>`, the last one wins.
  */
 export function parseClusterPatEntries(rawValue: string | undefined): ClusterPatEntry[] {
   if (!rawValue) {
@@ -40,8 +49,8 @@ export function parseClusterPatEntries(rawValue: string | undefined): ClusterPat
     const clusterId = trimmed.slice(0, separatorIndex).trim();
     const token = trimmed.slice(separatorIndex + 1).trim();
 
-    if (!UUID_PATTERN.test(clusterId)) {
-      console.warn('[cluster-pat] skipping entry with non-UUID cluster_id');
+    if (!CLUSTER_ID_PATTERN.test(clusterId)) {
+      console.warn('[cluster-pat] skipping entry with invalid cluster_id (expected ^[A-Za-z0-9_-]{1,64}$)');
       continue;
     }
 

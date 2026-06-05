@@ -79,6 +79,13 @@
         final_auth_pat_token: "{{ aocr_auth_pat_token | default(lookup('password', playbook_dir + '/../../secrets/auth_pat_token length=64 chars=ascii_letters,digits'), true) }}"
         final_internal_api_token: "{{ aocr_internal_api_token | default(lookup('password', playbook_dir + '/../../secrets/internal_api_token length=64 chars=ascii_letters,digits'), true) }}"
         final_mirror_writer_password: "{{ aocr_mirror_writer_password | default(lookup('password', playbook_dir + '/../../secrets/mirror_writer_password length=32 chars=ascii_letters,digits'), true) }}"
+        # Cluster-class PATs for AerolVM snapshot/template push+pull. Not
+        # auto-generated: each entry is `<cluster_id>=<token>` where cluster_id
+        # is an operator-chosen label and the token typically matches the
+        # cluster's SB_AUTO_IMPORT_CLUSTER_PAT_PATH (reuse internal_api_token).
+        # Empty by default → cluster artifact push/pull stays unauthorized until
+        # an operator registers a cluster.
+        final_cluster_pat_tokens: "{{ aocr_auth_cluster_pat_tokens | default([], true) }}"
 
     - name: Generate upstream wrap key if not provided
       delegate_to: localhost
@@ -140,6 +147,9 @@
           --set-file auth.jwtPublicCertificate="/home/ubuntu/aocr-secrets/jwt-public.crt"
           --set-string hooks.internalApiToken="{{ final_internal_api_token }}"
           --set-string auth.upstreamAuth.wrapKey="{{ final_upstream_wrap_key }}"
+          {% for entry in final_cluster_pat_tokens %}
+          --set-string 'auth.clusterPat.tokens[{{ loop.index0 }}]={{ entry }}'
+          {% endfor %}
           --set mirror.enabled={{ aocr_mirror_enabled | default(false) | bool | string | lower }}
           {% if aocr_mirror_enabled | default(false) | bool %}
           --set mirror.host="{{ aocr_mirror_host | default('mirror.' + aocr_global_domain) }}"

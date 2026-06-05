@@ -48,11 +48,20 @@ describe("inferredProvenance", () => {
     });
   });
 
-  it("flags cluster/<non-uuid>/<name> as cluster-snapshot but leaves cluster_id null", () => {
-    const parsed = inferredProvenance("cluster/not-a-uuid/sandbox-snap-xyz");
+  it("flags cluster/<label>/<name> as cluster-snapshot and extracts the label cluster_id", () => {
+    const parsed = inferredProvenance("cluster/prod-aerolvm-us-east-1/templates/py311");
+    assert.equal(parsed?.provenance, "cluster-snapshot");
+    assert.equal(parsed?.clusterId, "prod-aerolvm-us-east-1");
+    assert.equal(parsed?.name, "prod-aerolvm-us-east-1/templates/py311");
+  });
+
+  it("leaves cluster_id null when the second segment is not a valid cluster label", () => {
+    // A dot is outside the cluster-id charset (^[A-Za-z0-9_-]{1,64}$); still
+    // flagged cluster-snapshot, just without extractable cluster metadata.
+    const parsed = inferredProvenance("cluster/has.dot/sandbox-snap-xyz");
     assert.equal(parsed?.provenance, "cluster-snapshot");
     assert.equal(parsed?.clusterId, null);
-    assert.equal(parsed?.name, "not-a-uuid/sandbox-snap-xyz");
+    assert.equal(parsed?.name, "has.dot/sandbox-snap-xyz");
   });
 
   it("preserves deep snapshot paths under cluster/", () => {
