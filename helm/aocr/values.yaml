@@ -37,12 +37,17 @@ auth:
   pat:
     token: ""
     tokens: []
-  # Cluster-class PATs (F3). Each entry maps a cluster_id (UUID) to a token.
-  # The bearer of this token can push and pull only inside the `cluster/<cluster_id>/*`
+  # Cluster-class PATs (F3). Each entry maps a cluster_id to a token. The
+  # cluster_id is an operator-chosen label (`^[A-Za-z0-9_-]{1,64}$`, UUIDs are a
+  # valid subset) and must match the cluster's `SB_AUTO_IMPORT_CLUSTER_ID`. The
+  # bearer of this token can push and pull only inside the `cluster/<cluster_id>/*`
   # namespace, plus pull (read-only) from `mirror/*`. Used by AerolVM sandboxd's
-  # machine identity once snapshot push-on-commit lands.
+  # machine identity to push/pull cluster snapshots and Firecracker templates
+  # (`cluster/<id>/{snapshots,templates}/...`). Reuse the same token value the
+  # cluster reads from SB_AUTO_IMPORT_CLUSTER_PAT_PATH so one secret covers both
+  # auto-import and artifact push/pull.
   clusterPat:
-    tokens: []  # ["<cluster_id_uuid>=<token>", ...]
+    tokens: []  # ["<cluster_id>=<token>", ...]
   # Upstream-auth credential wrap (F19). The mirror wraps user-supplied upstream
   # registry credentials with AES-256-GCM and forwards the resulting opaque blob
   # to this auth service; only auth holds the key and can decrypt. Key is 32

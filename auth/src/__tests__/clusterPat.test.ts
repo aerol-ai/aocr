@@ -37,8 +37,17 @@ describe('parseClusterPatEntries', () => {
     assert.deepEqual(parseClusterPatEntries(raw), [{ clusterId: CLUSTER_A, token: 'ok' }]);
   });
 
-  it('skips entries whose cluster_id is not a UUID', () => {
-    const raw = `not-a-uuid=secret\n${CLUSTER_A}=ok`;
+  it('accepts label-format cluster_ids (not just UUIDs)', () => {
+    const raw = `prod-aerolvm-us-east-1=secret\n${CLUSTER_A}=ok`;
+    assert.deepEqual(parseClusterPatEntries(raw), [
+      { clusterId: 'prod-aerolvm-us-east-1', token: 'secret' },
+      { clusterId: CLUSTER_A, token: 'ok' },
+    ]);
+  });
+
+  it('skips cluster_ids with path-unsafe characters or over the length cap', () => {
+    const tooLong = 'a'.repeat(65);
+    const raw = `bad/slash=secret\nhas space=secret\n${tooLong}=secret\n${CLUSTER_A}=ok`;
     assert.deepEqual(parseClusterPatEntries(raw), [{ clusterId: CLUSTER_A, token: 'ok' }]);
   });
 
@@ -72,6 +81,28 @@ describe('evaluateClusterPatScope', () => {
       CLUSTER_A,
       'repository',
       `cluster/${CLUSTER_A}/snap-xyz`,
+      ['push', 'pull'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['push', 'pull']);
+  });
+
+  it('allows push+pull for the templates subpath under a label cluster id', () => {
+    const decision = evaluateClusterPatScope(
+      'prod-aerolvm-us-east-1',
+      'repository',
+      'cluster/prod-aerolvm-us-east-1/templates/py311',
+      ['push', 'pull'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['push', 'pull']);
+  });
+
+  it('allows push+pull for the snapshots subpath under a label cluster id', () => {
+    const decision = evaluateClusterPatScope(
+      'prod-aerolvm-us-east-1',
+      'repository',
+      'cluster/prod-aerolvm-us-east-1/snapshots/py-ready',
       ['push', 'pull'],
     );
     assert.equal(decision.allowed, true);

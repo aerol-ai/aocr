@@ -96,8 +96,25 @@ The registry supports two parallel authentication paths, and both are wired by t
 |------|---------------|-----------|---------|
 | **API auth** | The presented password does **not** match any configured PAT | `aocr_auth_validationServiceUrl` in `vars.yml` → `auth.validationServiceUrl` in the chart | End users — your control plane (`app.aerol.ai/api/auth/info`) issues short-lived tokens after a normal login |
 | **Static PAT** | The presented password matches a configured PAT (timing-safe compare) | `aocr_auth_pat_token` in `secrets.yml` → `auth.pat.token` in the chart | Admins / CI — the holder of the PAT logs in with `docker login` directly, bypassing the upstream API |
+| **Cluster PAT** | The presented password matches a configured cluster token; scope is restricted to that cluster's namespace | `aocr_auth_cluster_pat_tokens` in `secrets.yml` → `auth.clusterPat.tokens` in the chart | AerolVM sandboxd — pushes/pulls cluster snapshots and Firecracker templates under `cluster/<id>/{snapshots,templates}/*` |
 
-Order of evaluation in the auth service: **PAT first, API as fallback**. PAT matches skip the Postgres user sync and use a synthetic `static-pat` subject.
+Order of evaluation in the auth service: **static PAT → cluster PAT → API as fallback**. PAT matches skip the Postgres user sync and use a synthetic subject; a cluster PAT is additionally scoped to `cluster/<cluster_id>/*` (push+pull) plus read-only `mirror/*`.
+
+### Cluster PATs (snapshot + template push/pull)
+
+When you connect an AerolVM cluster (see `aocr_aerol_stitch.md`), the cluster pushes its Docker snapshots and Firecracker templates into AOCR under `cluster/<id>/...` and pulls them back on peers/failover. That registry traffic authenticates with a **cluster PAT** scoped to the cluster's own namespace — not the admin PAT.
+
+Register one entry per connected cluster in `secrets.yml`:
+
+```yaml
+aocr_auth_cluster_pat_tokens:
+  - "prod-aerolvm-us-east-1=<token>"   # cluster_id = SB_AUTO_IMPORT_CLUSTER_ID
+```
+
+- `cluster_id` is the operator label you chose for the cluster (`^[A-Za-z0-9_-]{1,64}$`; UUIDs are a valid subset) and must equal its `SB_AUTO_IMPORT_CLUSTER_ID`.
+- `<token>` must equal the token the cluster reads from `SB_AUTO_IMPORT_CLUSTER_PAT_PATH`. Reuse `aocr_internal_api_token` so a single secret covers both auto-import and artifact push/pull.
+
+Unlike the other secrets, cluster PATs are **not auto-generated** — they depend on operator-chosen cluster IDs and which token a given cluster presents. Leave `aocr_auth_cluster_pat_tokens` unset (the default) and cluster artifact push/pull stays unauthorized until you register a cluster.
 
 ### Where the admin PAT lives
 

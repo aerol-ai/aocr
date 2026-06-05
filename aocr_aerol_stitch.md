@@ -88,12 +88,23 @@ Every command in the rest of this doc that says `cat secrets/<name>` can
 be swapped for `aocr_secret aocr_<var> <name>` if you've overridden in
 `secrets.yml`.
 
-> Naming gotcha. The sandbox-library calls the internal-API-token file
-> `cluster-pat` (variable: `sandboxd_auto_import_cluster_pat_src`). That's
-> historical naming — the content is AOCR's `internal_api_token`, not the
-> UUID-keyed cluster PAT used by `auth/src/clusterPat.ts`. The latter is a
-> different concept entirely (sandbox-side `docker pull` of *already
-> imported* cluster images) and is not what's being configured by F21.
+> Naming gotcha. The sandbox-library calls the file `cluster-pat`
+> (variable: `sandboxd_auto_import_cluster_pat_src`). sandboxd reads this one
+> file for **two** planes:
+>
+> 1. **Auto-import (F21)** — presented as `Authorization: Bearer <token>` to
+>    AOCR's hooks `/v1/internal/imports`, validated against `INTERNAL_API_TOKEN`.
+> 2. **Cluster artifact push/pull** — presented as the Docker registry
+>    password when sandboxd pushes/pulls snapshots and Firecracker templates
+>    under `cluster/<id>/...`, validated by `auth/src/clusterPat.ts` against
+>    `AUTH_CLUSTER_PAT_TOKENS`.
+>
+> Because it's one file, the token in it must be accepted by **both**: set
+> `AUTH_CLUSTER_PAT_TOKENS=<cluster_id>=<that-token>` so the same secret that
+> works for auto-import also authorizes registry push/pull. See
+> [Cluster artifact distribution](#cluster-artifact-distribution-snapshots--templates)
+> below. (Cluster IDs are now operator labels, not UUIDs — `clusterPat.ts`
+> accepts `^[A-Za-z0-9_-]{1,64}$`, matching `SB_AUTO_IMPORT_CLUSTER_ID`.)
 
 ## Part 1 — Deploy AOCR
 
@@ -381,6 +392,63 @@ curl -sf -H "Authorization: Bearer $TOKEN" \
   "https://aocr.aerol.ai/v1/images?limit=200" | jq -r '.images[].repository' \
   | grep "cluster/prod-aerolvm-us-east-1/_imported/"
 ```
+
+## Cluster artifact distribution (snapshots + templates)
+
+The mirror and auto-import flows above are about *pulling upstream images
+through* AOCR. A separate, optional flow lets an AerolVM cluster *store its own
+artifacts* in AOCR so they survive a node failure and can be pulled by peers:
+
+| Artifact | AOCR repo | Produced by | Consumed by |
+|---|---|---|---|
+| Docker snapshot | `cluster/<id>/snapshots/<name>:latest` | `SB_SNAPSHOT_PUSH_ENABLED=true` | create-path pull on a peer / failover recreate |
+| Firecracker template | `cluster/<id>/templates/<tid>:latest` | `SB_SNAPSHOT_PUSH_ENABLED=true` **+** `SB_ENABLE_FIRECRACKER=true` | lazy template pull on first sandbox create on a peer |
+
+Both push and pull use the **same cluster PAT** as the Docker registry
+credential, scoped to `cluster/<id>/*` by `auth/src/clusterPat.ts` (push+pull
+inside your own namespace; `mirror/*` read-only; everything else rejected).
+
+### One-time AOCR setup
+
+Register the cluster PAT so the registry accepts the cluster's push/pull. Reuse
+the same token sandboxd already reads from its `cluster-pat` file (the one wired
+as `SB_AUTO_IMPORT_CLUSTER_PAT_PATH`), so a single secret covers auto-import and
+artifact push/pull:
+
+```yaml
+# aocr.sh — ansible/inventory/group_vars/all/secrets.yml (or the auth env)
+# AUTH_CLUSTER_PAT_TOKENS: newline/comma-separated <cluster_id>=<token> entries.
+aocr_auth_cluster_pat_tokens: "prod-aerolvm-us-east-1=<same value as internal_api_token>"
+```
+
+`<cluster_id>` is the label you chose in Part 2 (`^[A-Za-z0-9_-]{1,64}$`); it
+must equal `SB_AUTO_IMPORT_CLUSTER_ID` on the cluster side. Redeploy AOCR after
+setting it.
+
+### Cluster side
+
+No extra knobs beyond what Part 2 already set. On a worker node:
+
+- **Push** activates with `SB_SNAPSHOT_PUSH_ENABLED=true` (templates additionally
+  need `SB_ENABLE_FIRECRACKER=true`). Host falls back
+  `SB_MIRROR_PUSH_HOST` → `SB_IMAGE_DISTRIBUTION_AOCR_HOST`.
+- **Pull** is automatic and does *not* require `SB_SNAPSHOT_PUSH_ENABLED` — a
+  consume-only node pulls cluster artifacts as long as `SB_AUTO_IMPORT_CLUSTER_ID`
+  and the `cluster-pat` file are present. sandboxd presents the cluster PAT on
+  every `cluster/<id>/...` pull (read fresh from the file, so rotation is a file
+  write).
+
+### Verify
+
+```bash
+TOKEN=$(cat aocr.sh/secrets/auth_pat_token)
+curl -sf -H "Authorization: Bearer $TOKEN" \
+  "https://aocr.aerol.ai/v1/images?limit=200" | jq -r '.images[].repository' \
+  | grep -E "cluster/prod-aerolvm-us-east-1/(snapshots|templates)/"
+```
+
+A template push lands `cluster/<id>/templates/<tid>:latest`; a peer node's first
+sandbox create against that template pulls + extracts it before booting.
 
 ## Operating both halves
 

@@ -30,7 +30,12 @@ const TTL_CANONICAL_SUFFIX: Record<string, string> = {
 
 const TTL_TAG_PATTERN = /^(.*)--(ttl|idle)-([a-z0-9]+)$/;
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Cluster IDs are operator-chosen labels (`^[A-Za-z0-9_-]{1,64}$`), matching
+// ImportAPI's CLUSTER_ID_PATTERN and the sandbox-library `SB_AUTO_IMPORT_CLUSTER_ID`
+// constraint. UUIDs remain a valid subset. Keeping this in sync ensures the
+// `images.cluster_id` metadata column populates for label-based snapshot/template
+// pushes, not just UUID-keyed ones.
+const CLUSTER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type Provenance = "pushed" | "mirror" | "cluster-snapshot";
 
@@ -47,7 +52,8 @@ export interface InferredProvenance {
  * "mirror/aocr/ghcr/org/repo") into (organization, name, provenance, ...).
  *
  * - `cluster/...` -> provenance=cluster-snapshot; clusterId is the second
- *   segment if it parses as a UUID, else null (still flagged cluster-snapshot).
+ *   segment if it matches the cluster-id label pattern, else null (still
+ *   flagged cluster-snapshot).
  * - `mirror/...`  -> provenance=mirror; upstreamRef is the path after `mirror/`.
  * - anything else -> provenance=pushed.
  *
@@ -68,7 +74,7 @@ export function inferredProvenance(repository: string | null | undefined): Infer
 
   if (organization === "cluster") {
     const candidateClusterId = segments[1];
-    const clusterId = UUID_PATTERN.test(candidateClusterId) ? candidateClusterId : null;
+    const clusterId = CLUSTER_ID_PATTERN.test(candidateClusterId) ? candidateClusterId : null;
     return {
       provenance: "cluster-snapshot",
       organization,
