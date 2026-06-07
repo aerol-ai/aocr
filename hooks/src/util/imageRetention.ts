@@ -3,8 +3,15 @@ import { removeCachedImage } from "./redis";
 
 const registryUrl = (process.env["REGISTRY_URL"] || "http://registry:5000").replace(/\/+$/, "");
 const pool = createPool();
+// Cluster WASM checkpoints are OCI image manifests (ORAS); Docker snapshots may
+// still be schema2. Negotiate both so reap's HEAD fallback works when
+// manifest_digest was not captured on push.
 const manifestHeaders = {
-  Accept: "application/vnd.docker.distribution.manifest.v2+json",
+  Accept: [
+    "application/vnd.docker.distribution.manifest.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.oci.image.index.v1+json",
+  ].join(", "),
 };
 
 const DEFAULT_MIRROR_IDLE_SECONDS = 30 * 24 * 60 * 60;
