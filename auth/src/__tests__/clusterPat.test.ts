@@ -163,6 +163,38 @@ describe('evaluateClusterPatScope', () => {
     assert.deepEqual(decision.allowedActions, ['pull']);
   });
 
+  it('allows standard-module reads but drops push from the requested actions', () => {
+    const decision = evaluateClusterPatScope(
+      CLUSTER_A,
+      'repository',
+      'wasm/std/python',
+      ['pull', 'push'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['pull']);
+  });
+
+  it('allows reads on the bare standard-module namespace prefix', () => {
+    const decision = evaluateClusterPatScope(
+      CLUSTER_A,
+      'repository',
+      'wasm/std',
+      ['pull'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['pull']);
+  });
+
+  it('does not match a namespace that merely starts with the std prefix string', () => {
+    const decision = evaluateClusterPatScope(
+      CLUSTER_A,
+      'repository',
+      'wasm/stdlib-evil/foo',
+      ['pull'],
+    );
+    assert.equal(decision.allowed, false);
+  });
+
   it('rejects user-namespace push/pull entirely', () => {
     const decision = evaluateClusterPatScope(
       CLUSTER_A,

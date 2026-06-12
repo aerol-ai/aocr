@@ -19,6 +19,20 @@ export interface ClusterPatScopeDecision {
   reason?: string;
 }
 
+// Standard WASM module namespace. AerolVM stages curated language runtimes here
+// (e.g. wasm/std/python) and references them fleet-wide by reserved keyword. It
+// must be pull-only for every tenant cluster PAT (so any cluster can fetch the
+// shared runtime) while remaining writable solely by the system/static PAT that
+// publishes them. Configurable so an operator can relocate it; default tracks
+// the `wasm.standard_modules` ref prefix on the AerolVM side. Kept in lockstep
+// with the reaper's STANDARD_MODULE_NAMESPACE protection (hooks/imageRetention).
+const DEFAULT_STANDARD_MODULE_NAMESPACE = 'wasm/std';
+
+export function getStandardModuleNamespace(): string {
+  const raw = (process.env['AOCR_WASM_STD_NAMESPACE'] || '').trim().replace(/\/+$/, '');
+  return raw.length > 0 ? raw : DEFAULT_STANDARD_MODULE_NAMESPACE;
+}
+
 /**
  * Parse the AUTH_CLUSTER_PAT_TOKENS env value.
  *
@@ -72,6 +86,7 @@ export function parseClusterPatEntries(rawValue: string | undefined): ClusterPat
  * Cluster-class PAT scope policy:
  *   - repository:cluster/<clusterId>/...  -> all requested actions allowed (push + pull)
  *   - repository:mirror/...               -> read-only (pull) actions allowed; push silently dropped
+ *   - repository:wasm/std/...             -> read-only (pull) actions allowed; push silently dropped
  *   - anything else                       -> rejected (allowed=false)
  */
 export function evaluateClusterPatScope(
@@ -98,9 +113,15 @@ export function evaluateClusterPatScope(
     return { allowed: true, allowedActions: readOnly };
   }
 
+  const stdNamespace = getStandardModuleNamespace();
+  if (scopeName === stdNamespace || scopeName.startsWith(`${stdNamespace}/`)) {
+    const readOnly = requestedActions.filter((action) => action === 'pull');
+    return { allowed: true, allowedActions: readOnly };
+  }
+
   return {
     allowed: false,
     allowedActions: [],
-    reason: `cluster PAT scope ${scopeName} is outside the cluster/${clusterId} and mirror/* namespaces`,
+    reason: `cluster PAT scope ${scopeName} is outside the cluster/${clusterId}, mirror/*, and ${stdNamespace}/* namespaces`,
   };
 }
