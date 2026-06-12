@@ -3,8 +3,15 @@ import { removeCachedImage } from "./redis";
 
 const registryUrl = (process.env["REGISTRY_URL"] || "http://registry:5000").replace(/\/+$/, "");
 const pool = createPool();
+// Cluster WASM checkpoints are OCI image manifests (ORAS); Docker snapshots may
+// still be schema2. Negotiate both so reap's HEAD fallback works when
+// manifest_digest was not captured on push.
 const manifestHeaders = {
-  Accept: "application/vnd.docker.distribution.manifest.v2+json",
+  Accept: [
+    "application/vnd.docker.distribution.manifest.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.oci.image.index.v1+json",
+  ].join(", "),
 };
 
 const DEFAULT_MIRROR_IDLE_SECONDS = 30 * 24 * 60 * 60;
@@ -49,6 +56,26 @@ export function parseMirrorUpstreamRetentionMap(raw?: string): Record<string, nu
     out[upstream] = Math.floor(seconds);
   }
   return out;
+}
+
+// Namespaces the reaper must never touch. AerolVM stages curated standard WASM
+// modules under wasm/std/* and pins their content digest into every sandbox in
+// the fleet; the default keep-latest rule would reap an older standard tag the
+// moment a newer one is pushed, silently breaking every pinned digest. These
+// repos are excluded from ALL reap selection (keep-latest, ttl, idle, mirror).
+// Kept in lockstep with auth/clusterPat's getStandardModuleNamespace, which
+// makes the same namespace pull-only for tenant cluster PATs.
+const DEFAULT_PROTECTED_NAMESPACE = "wasm/std";
+
+export function parseProtectedNamespaces(raw?: string): string[] {
+  const fallback = (process.env["AOCR_WASM_STD_NAMESPACE"] || DEFAULT_PROTECTED_NAMESPACE).trim();
+  const source = raw == null ? process.env["AOCR_RETENTION_PROTECTED_NAMESPACES"] : raw;
+  const candidates = (source && source.trim().length > 0 ? source : fallback)
+    .split(/[\n,]/)
+    .map((entry) => entry.trim().replace(/\/+$/, ""))
+    .filter((entry) => entry.length > 0);
+  // De-dupe while preserving order.
+  return Array.from(new Set(candidates));
 }
 
 interface ReapOptions {
@@ -107,10 +134,13 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
     const mirrorDefaultParam = `$${scopeValueCount + 1}`;
     const mirrorUpstreamArrayParam = `$${scopeValueCount + 2}`;
     const mirrorSecondsArrayParam = `$${scopeValueCount + 3}`;
+    const protectedNamespacesParam = `$${scopeValueCount + 4}`;
+    const protectedNamespaces = parseProtectedNamespaces();
     const mirrorParamValues = [
       mirrorDefaultIdleSeconds,
       mirrorOverrideUpstreams,
       mirrorOverrideSeconds,
+      protectedNamespaces,
     ];
     const staleImagesRes = await pgClient.query<ReapCandidateRow>(`
       WITH mirror_overrides AS (
@@ -210,19 +240,33 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
           AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at) IS NOT NULL
           AND COALESCE(i.last_pulled_at, i.last_pushed_at, i.created_at)
               + (COALESCE(i.retention_value_seconds, mrr.retention_seconds) || ' seconds')::interval <= CURRENT_TIMESTAMP
+      ),
+      reap_candidates AS (
+        SELECT id, repository_id, tag, organization, name, manifest_digest
+        FROM keep_latest_images
+        WHERE row_num > 1
+        UNION ALL
+        SELECT id, repository_id, tag, organization, name, manifest_digest
+        FROM expired_ttl_images
+        UNION ALL
+        SELECT id, repository_id, tag, organization, name, manifest_digest
+        FROM expired_idle_images
+        UNION ALL
+        SELECT id, repository_id, tag, organization, name, manifest_digest
+        FROM expired_mirror_idle_images
       )
+      -- Protected-namespace guard: drop any candidate whose repo path
+      -- (organization/name) equals or sits under a protected prefix. A bare
+      -- prefix match plus a "prefix/%" match means "wasm/std" protects both
+      -- the namespace root and every repo beneath it, but NOT an unrelated
+      -- repo like "wasm/stdlib-evil" that merely shares the string prefix.
       SELECT id, repository_id, tag, organization, name, manifest_digest
-      FROM keep_latest_images
-      WHERE row_num > 1
-      UNION ALL
-      SELECT id, repository_id, tag, organization, name, manifest_digest
-      FROM expired_ttl_images
-      UNION ALL
-      SELECT id, repository_id, tag, organization, name, manifest_digest
-      FROM expired_idle_images
-      UNION ALL
-      SELECT id, repository_id, tag, organization, name, manifest_digest
-      FROM expired_mirror_idle_images
+      FROM reap_candidates c
+      WHERE NOT EXISTS (
+        SELECT 1 FROM UNNEST(${protectedNamespacesParam}::text[]) AS p(prefix)
+        WHERE (c.organization || '/' || c.name) = p.prefix
+           OR (c.organization || '/' || c.name) LIKE p.prefix || '/%'
+      )
       ORDER BY organization, name, tag
       LIMIT 500
     `, [...scope.values, ...mirrorParamValues]);

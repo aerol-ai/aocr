@@ -393,7 +393,7 @@ curl -sf -H "Authorization: Bearer $TOKEN" \
   | grep "cluster/prod-aerolvm-us-east-1/_imported/"
 ```
 
-## Cluster artifact distribution (snapshots + templates)
+## Cluster artifact distribution (snapshots + templates + WASM checkpoints)
 
 The mirror and auto-import flows above are about *pulling upstream images
 through* AOCR. A separate, optional flow lets an AerolVM cluster *store its own
@@ -403,6 +403,7 @@ artifacts* in AOCR so they survive a node failure and can be pulled by peers:
 |---|---|---|---|
 | Docker snapshot | `cluster/<id>/snapshots/<name>:latest` | `SB_SNAPSHOT_PUSH_ENABLED=true` | create-path pull on a peer / failover recreate |
 | Firecracker template | `cluster/<id>/templates/<tid>:latest` | `SB_SNAPSHOT_PUSH_ENABLED=true` **+** `SB_ENABLE_FIRECRACKER=true` | lazy template pull on first sandbox create on a peer |
+| WASM checkpoint (durable) | `cluster/<id>/wasm-checkpoints/<sandbox-id>:latest` | `SB_SNAPSHOT_PUSH_ENABLED=true` **+** WASM runtime with durable lifecycle | failover rehydrate pull on a peer (ORAS OCI artifact) |
 
 Both push and pull use the **same cluster PAT** as the Docker registry
 credential, scoped to `cluster/<id>/*` by `auth/src/clusterPat.ts` (push+pull
@@ -444,11 +445,13 @@ No extra knobs beyond what Part 2 already set. On a worker node:
 TOKEN=$(cat aocr.sh/secrets/auth_pat_token)
 curl -sf -H "Authorization: Bearer $TOKEN" \
   "https://aocr.aerol.ai/v1/images?limit=200" | jq -r '.images[].repository' \
-  | grep -E "cluster/prod-aerolvm-us-east-1/(snapshots|templates)/"
+  | grep -E "cluster/prod-aerolvm-us-east-1/(snapshots|templates|wasm-checkpoints)/"
 ```
 
 A template push lands `cluster/<id>/templates/<tid>:latest`; a peer node's first
-sandbox create against that template pulls + extracts it before booting.
+sandbox create against that template pulls + extracts it before booting. A durable
+WASM checkpoint push lands `cluster/<id>/wasm-checkpoints/<sandbox-id>:latest` as an
+OCI manifest (config + layers); peers pull by digest on failover rehydrate.
 
 ## Operating both halves
 

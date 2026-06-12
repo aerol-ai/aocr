@@ -56,6 +56,28 @@ Each image row now carries a `provenance` column with one of three values:
 
 The retention rules above still apply uniformly across all three. Provenance-aware retention (different idle defaults per provenance, snapshot-liveness checks, etc.) is layered on in later phases. For details on cluster snapshots and the mirror cache, see [`plans/cluster-mirror-and-snapshot-distribution.md`](./plans/cluster-mirror-and-snapshot-distribution.md).
 
+## Protected Namespaces (Standard WASM Modules)
+
+Some repositories must never be reaped regardless of the rules above. AerolVM
+stages curated standard WASM language runtimes under `wasm/std/*` (e.g.
+`wasm/std/python:3.12`) and pins each module's content digest into every sandbox
+across the fleet. Under the default keep-latest rule, pushing a newer standard
+tag would reap the older one and silently break every pinned digest still
+booting it.
+
+The Reaper therefore excludes a configurable set of protected repo-path
+prefixes from **all** selection (keep-latest, `--ttl-*`, `--idle-*`, mirror):
+
+- `AOCR_WASM_STD_NAMESPACE` (default `wasm/std`) — the standard-module
+  namespace. The auth service also makes this prefix pull-only for tenant
+  cluster PATs (writable only by the static/system PAT).
+- `AOCR_RETENTION_PROTECTED_NAMESPACES` — optional comma/newline-separated list
+  of additional prefixes. Defaults to `AOCR_WASM_STD_NAMESPACE` when unset.
+
+A prefix protects both the namespace root and everything beneath it
+(`wasm/std` and `wasm/std/python`) but not an unrelated repo that merely shares
+the string prefix (`wasm/stdlib-evil` is still reaped normally).
+
 ## Storage Reclamation (Garbage Collection)
 When the Reaper deletes an expired tag, it only deletes the **manifest** (the metadata linking the tag to its underlying layer blobs). The actual gigabytes of layer data remain in S3 because they might be shared by other active images.
 

@@ -109,6 +109,17 @@ describe('evaluateClusterPatScope', () => {
     assert.deepEqual(decision.allowedActions, ['push', 'pull']);
   });
 
+  it('allows push+pull for the wasm-checkpoints subpath under a label cluster id', () => {
+    const decision = evaluateClusterPatScope(
+      'prod-aerolvm-us-east-1',
+      'repository',
+      'cluster/prod-aerolvm-us-east-1/wasm-checkpoints/sb-1',
+      ['push', 'pull'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['push', 'pull']);
+  });
+
   it('allows push+pull on the bare own-cluster namespace prefix', () => {
     const decision = evaluateClusterPatScope(
       CLUSTER_A,
@@ -150,6 +161,38 @@ describe('evaluateClusterPatScope', () => {
     );
     assert.equal(decision.allowed, true);
     assert.deepEqual(decision.allowedActions, ['pull']);
+  });
+
+  it('allows standard-module reads but drops push from the requested actions', () => {
+    const decision = evaluateClusterPatScope(
+      CLUSTER_A,
+      'repository',
+      'wasm/std/python',
+      ['pull', 'push'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['pull']);
+  });
+
+  it('allows reads on the bare standard-module namespace prefix', () => {
+    const decision = evaluateClusterPatScope(
+      CLUSTER_A,
+      'repository',
+      'wasm/std',
+      ['pull'],
+    );
+    assert.equal(decision.allowed, true);
+    assert.deepEqual(decision.allowedActions, ['pull']);
+  });
+
+  it('does not match a namespace that merely starts with the std prefix string', () => {
+    const decision = evaluateClusterPatScope(
+      CLUSTER_A,
+      'repository',
+      'wasm/stdlib-evil/foo',
+      ['pull'],
+    );
+    assert.equal(decision.allowed, false);
   });
 
   it('rejects user-namespace push/pull entirely', () => {

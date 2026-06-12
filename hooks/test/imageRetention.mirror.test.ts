@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 process.env["DATABASE_URL"] = process.env["DATABASE_URL"] || "postgres://test:test@127.0.0.1:5432/test";
 
-import { parseMirrorUpstreamRetentionMap } from "../src/util/imageRetention";
+import { parseMirrorUpstreamRetentionMap, parseProtectedNamespaces } from "../src/util/imageRetention";
 
 describe("parseMirrorUpstreamRetentionMap", () => {
   it("returns empty for missing / blank input", () => {
@@ -43,5 +43,25 @@ describe("parseMirrorUpstreamRetentionMap", () => {
       "ghcr": 100.9,
     }));
     assert.equal(parsed["ghcr"], 100);
+  });
+});
+
+describe("parseProtectedNamespaces", () => {
+  it("defaults to wasm/std when nothing is configured", () => {
+    assert.deepEqual(parseProtectedNamespaces(""), ["wasm/std"]);
+  });
+
+  it("splits comma- and newline-separated prefixes and trims trailing slashes", () => {
+    assert.deepEqual(
+      parseProtectedNamespaces("wasm/std/,\n acme/protected , wasm/std"),
+      ["wasm/std", "acme/protected"],
+    );
+  });
+
+  it("de-dupes while preserving order", () => {
+    assert.deepEqual(
+      parseProtectedNamespaces("a/b,a/b,c/d"),
+      ["a/b", "c/d"],
+    );
   });
 });
