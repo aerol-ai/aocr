@@ -1,0 +1,70 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+      - prerelease
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  auth:
+    name: auth tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auth
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: auth/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:coverage
+
+  hooks:
+    name: hooks tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hooks
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hooks/package-lock.json
+      - run: npm ci
+      - run: npm run test:coverage
+
+  mirror:
+    name: mirror tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mirror
+    steps:
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+      - uses: actions/checkout@v6
+      - run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - name: Enforce coverage threshold
+        run: |
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ { sub(/%/, "", $3); print $3 }')
+          awk -v p="$pct" 'BEGIN { if (p + 0 < 74) { printf "mirror coverage %.1f%% < 74%%\n", p; exit 1 } printf "mirror coverage %.1f%%\n", p }'
+
+  helm:
+    name: helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: azure/setup-helm@v4
+      - run: helm lint helm/aocr

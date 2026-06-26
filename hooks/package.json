@@ -29,11 +29,13 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/lodash": "^4.17.24",
+    "c8": "^10.1.3",
     "tslint": "^6.1.3",
     "typescript": "^6.0.3"
   },
   "scripts": {
-    "test": "tsc -p tsconfig.test.json && node --test 'build-test/test/**/*.test.js'"
+    "test": "tsc -p tsconfig.test.json && node --test 'build-test/test/**/*.test.js'",
+    "test:coverage": "tsc -p tsconfig.test.json && METRICS_ENABLED=true c8 --check-coverage --lines 90 --include 'build-test/src/**/*.js' --exclude 'build-test/test/**' --exclude 'build-test/src/util/redis.js' node --test 'build-test/test/**/*.test.js'"
   },
   "snyk": true
 }

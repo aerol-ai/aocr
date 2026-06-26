@@ -1,5 +1,6 @@
 import { createPool } from "./database";
 import { removeCachedImage } from "./redis";
+import type { Pool } from "pg";
 
 const registryUrl = (process.env["REGISTRY_URL"] || "http://registry:5000").replace(/\/+$/, "");
 const pool = createPool();
@@ -98,7 +99,7 @@ function normalizeRepositoryIds(repositoryIds?: string[]): string[] {
     .filter((repositoryId) => repositoryId.length > 0);
 }
 
-function buildRepositoryScope(repositoryIds: string[]): { query: string; values: any[]; label: string } {
+export function buildRepositoryScope(repositoryIds: string[]): { query: string; values: any[]; label: string } {
   if (repositoryIds.length === 0) {
     return {
       query: "",
@@ -119,7 +120,10 @@ export function getConfiguredRepositoryIds(): string[] {
   return normalizeRepositoryIds(rawRepositoryIds.split(","));
 }
 
-export async function reapObsoleteImages(options: ReapOptions = {}): Promise<number> {
+export async function reapObsoleteImages(
+  options: ReapOptions = {},
+  pgPool: Pool = pool,
+): Promise<number> {
   const repositoryIds = normalizeRepositoryIds(options.repositoryIds);
   const scope = buildRepositoryScope(repositoryIds);
   const trigger = options.trigger || "manual";
@@ -127,7 +131,7 @@ export async function reapObsoleteImages(options: ReapOptions = {}): Promise<num
   const mirrorOverrides = parseMirrorUpstreamRetentionMap();
   const mirrorOverrideUpstreams = Object.keys(mirrorOverrides);
   const mirrorOverrideSeconds = mirrorOverrideUpstreams.map((upstream) => mirrorOverrides[upstream]);
-  const pgClient = await pool.connect();
+  const pgClient = await pgPool.connect();
 
   try {
     const scopeValueCount = scope.values.length;
