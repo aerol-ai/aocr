@@ -9,7 +9,7 @@ function getEnv(name: string): string | undefined {
   return value;
 }
 
-function getDatabaseConnectionString(): string {
+export function getDatabaseConnectionString(): string {
   const directConnectionString = getEnv("DATABASE_URL");
   if (directConnectionString != null) {
     return directConnectionString;

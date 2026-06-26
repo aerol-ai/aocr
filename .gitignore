@@ -26,3 +26,9 @@ secrets/
 *.key
 ansible/inventory/group_vars/all/vars.yml
 ansible/inventory/hosts.yml
+
+# Test coverage (c8, go test -coverprofile, etc.)
+**/coverage/
+coverage.out
+*.lcov
+.nyc_output/

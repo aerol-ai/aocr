@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 process.env["DATABASE_URL"] = process.env["DATABASE_URL"] || "postgres://test:test@127.0.0.1:5432/test";
 
-import { DELETE_MANIFEST_SQL, UPDATE_LAST_PULLED_AT_SQL, isManifestPullMediaType } from "../src/controllers/HookAPI";
+import { DELETE_MANIFEST_SQL, UPDATE_LAST_PULLED_AT_SQL, isManifestPullMediaType } from "../src/controllers/hookEvents";
 
 describe("UPDATE_LAST_PULLED_AT_SQL", () => {
   it("updates last_pulled_at", () => {

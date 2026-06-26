@@ -11,7 +11,7 @@ function getEnv(name: string): string | undefined {
   return value;
 }
 
-function getRedisUrl(): string | undefined {
+export function getRedisUrl(): string | undefined {
   const directRedisUrl = getEnv("REDISCLOUD_URL");
   if (directRedisUrl != null) {
     return directRedisUrl;
