@@ -19,7 +19,7 @@
     "pino-pretty": "^13.1.3",
     "prom-client": "^15.1.3",
     "randomstring": "^1.3.1",
-    "redis": "^6.0.0",
+    "redis": "^6.0.1",
     "simple-oauth2": "^5.1.0",
     "source-map-support": "^0.5.10",
     "ts-express-decorators": "^5.14.1",
