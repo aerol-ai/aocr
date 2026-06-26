@@ -6,7 +6,7 @@
   "main": "./build/server.js",
   "dependencies": {
     "@types/node": "^25.9.1",
-    "body-parser": "^2.2.2",
+    "body-parser": "^2.3.0",
     "cors": "^2.8.5",
     "cron": "^4.4.0",
     "express": "^5.2.1",
