@@ -51,10 +51,10 @@ jobs:
       run:
         working-directory: mirror
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.23"
-      - uses: actions/checkout@v6
+          go-version-file: mirror/go.mod
       - run: go test ./... -coverprofile=coverage.out -covermode=atomic
       - name: Enforce coverage threshold
         run: |
