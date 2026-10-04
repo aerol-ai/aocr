@@ -7,7 +7,7 @@ import {
   WRAPPED_UPSTREAM_MAX_AGE_MS,
   WRAPPED_UPSTREAM_TOKEN_PREFIX,
   WrappedUpstreamError,
-  extractRepoFromScope,
+  extractReposFromScope,
   isWrappedUpstreamToken,
   validateWrappedUpstream,
 } from '../upstreamAuth/strategy';
@@ -56,17 +56,29 @@ describe('isWrappedUpstreamToken', () => {
   });
 });
 
-describe('extractRepoFromScope', () => {
+describe('extractReposFromScope', () => {
   it('returns the name segment of repository scope strings', () => {
-    assert.equal(extractRepoFromScope('repository:library/redis:pull'), 'library/redis');
-    assert.equal(extractRepoFromScope('repository:aocr/ghcr/org/repo:pull,push'), 'aocr/ghcr/org/repo');
+    assert.deepEqual(extractReposFromScope('repository:library/redis:pull'), ['library/redis']);
+    assert.deepEqual(extractReposFromScope('repository:aocr/ghcr/org/repo:pull,push'), ['aocr/ghcr/org/repo']);
   });
 
-  it('returns null for empty / non-string / malformed input', () => {
-    assert.equal(extractRepoFromScope(undefined), null);
-    assert.equal(extractRepoFromScope(''), null);
-    assert.equal(extractRepoFromScope('no-colon'), null);
-    assert.equal(extractRepoFromScope(42), null);
+  it('returns every distinct name from a repeated scope param', () => {
+    assert.deepEqual(
+      extractReposFromScope([
+        'repository:aocr/ghcr/org/a:pull',
+        'repository:aocr/ghcr/org/a:pull,push',
+        'repository:aocr/ghcr/org/b:pull',
+      ]),
+      ['aocr/ghcr/org/a', 'aocr/ghcr/org/b'],
+    );
+  });
+
+  it('returns nothing for empty / non-string / malformed input', () => {
+    assert.deepEqual(extractReposFromScope(undefined), []);
+    assert.deepEqual(extractReposFromScope(''), []);
+    assert.deepEqual(extractReposFromScope('no-colon'), []);
+    assert.deepEqual(extractReposFromScope(42), []);
+    assert.deepEqual(extractReposFromScope([42, { x: SCOPE }]), []);
   });
 });
 
@@ -290,5 +302,90 @@ describe('validateWrappedUpstream key rotation', () => {
     });
     assert.equal(result.cacheHit, false);
     assert.match(result.identity, /^[0-9a-f]{64}$/);
+  });
+});
+
+describe('validateWrappedUpstream with repeated scope params', () => {
+  const OTHER_SCOPE = 'repository:aocr/ghcr/aerol-ai/other:pull';
+  const OTHER_REPO = 'aerol-ai/other';
+
+  class RecordingProbe implements UpstreamProbe {
+    public repos: string[] = [];
+    constructor(private readonly resultFor: (repo: string) => ProbeResult) {}
+    async probe(_creds: UpstreamCredentials, repo: string): Promise<ProbeResult> {
+      this.repos.push(repo);
+      return this.resultFor(repo);
+    }
+  }
+
+  it('probes once when the same repo is requested twice (pull + pull,push)', async () => {
+    const ring = freshRing();
+    const probe = new RecordingProbe(() => ({ ok: true, upstreamBearer: 'x' }));
+    const result = await validateWrappedUpstream(
+      wrappedToken(ring, SAMPLE_CREDS),
+      [SCOPE, 'repository:aocr/ghcr/aerol-ai/sandbox:pull,push'],
+      { keyRing: ring, proofCache: new ProofCache(), resolveProbe: () => probe },
+    );
+    assert.equal(result.cacheHit, false);
+    assert.deepEqual(probe.repos, [REPO]);
+  });
+
+  it('proves every distinct repo and reports a cache hit only when all are cached', async () => {
+    const ring = freshRing();
+    const cache = new ProofCache();
+    const probe = new RecordingProbe(() => ({ ok: true, upstreamBearer: 'x' }));
+    const deps = { keyRing: ring, proofCache: cache, resolveProbe: () => probe };
+
+    const first = await validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), [SCOPE, OTHER_SCOPE], deps);
+    assert.equal(first.cacheHit, false);
+    assert.deepEqual(probe.repos, [REPO, OTHER_REPO]);
+    assert.ok(cache.get(first.identity, REPO));
+    assert.ok(cache.get(first.identity, OTHER_REPO));
+
+    const second = await validateWrappedUpstream(wrappedToken(ring, SAMPLE_CREDS), [SCOPE, OTHER_SCOPE], deps);
+    assert.equal(second.cacheHit, true);
+    assert.equal(probe.repos.length, 2, 'both proofs served from cache');
+  });
+
+  it('rejects before probing when any scope routes to a different host', async () => {
+    const ring = freshRing();
+    const probe = new RecordingProbe(() => ({ ok: true, upstreamBearer: 'x' }));
+    await assert.rejects(
+      validateWrappedUpstream(
+        wrappedToken(ring, SAMPLE_CREDS),
+        [SCOPE, 'repository:library/redis:pull'],
+        { keyRing: ring, proofCache: new ProofCache(), resolveProbe: () => probe },
+      ),
+      (err: unknown) => err instanceof WrappedUpstreamError && err.code === 'route_mismatch',
+    );
+    assert.deepEqual(probe.repos, [], 'must not probe when any route fails');
+  });
+
+  it('rejects when a later repo fails its probe even though the first passed', async () => {
+    const ring = freshRing();
+    const probe = new RecordingProbe((repo) => (
+      repo === OTHER_REPO ? { ok: false, reason: 'unauthorized' } : { ok: true, upstreamBearer: 'x' }
+    ));
+    await assert.rejects(
+      validateWrappedUpstream(
+        wrappedToken(ring, SAMPLE_CREDS),
+        [SCOPE, OTHER_SCOPE],
+        { keyRing: ring, proofCache: new ProofCache(), resolveProbe: () => probe },
+      ),
+      (err: unknown) => err instanceof WrappedUpstreamError && err.code === 'unauthorized',
+    );
+    assert.deepEqual(probe.repos, [REPO, OTHER_REPO]);
+  });
+
+  it('rejects when every entry is non-string or malformed', async () => {
+    const ring = freshRing();
+    await assert.rejects(
+      validateWrappedUpstream(
+        wrappedToken(ring, SAMPLE_CREDS),
+        [42, { x: SCOPE }, 'no-colon'],
+        { keyRing: ring, proofCache: new ProofCache() },
+      ),
+      (err: unknown) => err instanceof WrappedUpstreamError && err.code === 'route_mismatch',
+    );
   });
 });
