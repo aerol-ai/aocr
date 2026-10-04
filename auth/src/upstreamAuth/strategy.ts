@@ -2,6 +2,7 @@
 // server.ts wires this up with env-derived dependencies (key ring + proof
 // cache); this module knows nothing about Express, Postgres, or process.env.
 
+import { parseRequestedScopes } from '../scope';
 import { credIdentity, unwrap, WrapError, WrapKeyRing } from './wrap';
 import { ProofCache } from './proofCache';
 import { getProbeForHost, UpstreamProbe } from './index';
@@ -52,13 +53,11 @@ export function isWrappedUpstreamToken(token: string): boolean {
 
 // The wrap envelope embeds the upstream `scope` (the Distribution token-
 // server scope the client requested). PR 4b accepts any scope shape and
-// hands the scope's "name" segment straight to the probe; PR 4c-adapter
-// land will tighten this with per-upstream parsing rules.
-export function extractRepoFromScope(scope: unknown): string | null {
-  if (typeof scope !== 'string' || scope.length === 0) return null;
-  const parts = scope.split(':');
-  if (parts.length < 2) return null;
-  return parts[1] || null;
+// hands each scope's "name" segment straight to the probe; PR 4c-adapter
+// land will tighten this with per-upstream parsing rules. `scope` may be a
+// repeated query param, so this returns every distinct name, first-seen order.
+export function extractReposFromScope(scope: unknown): string[] {
+  return Array.from(new Set(parseRequestedScopes(scope).map((entry) => entry.name)));
 }
 
 export type WrappedUpstreamDeps = {
@@ -111,48 +110,57 @@ export async function validateWrappedUpstream(
   const creds = unwrapped.creds;
   const identity = credIdentity(creds);
 
-  // Route the mirror-side scope to an upstream host + upstream-side repo
-  // path. Reject if the scope's prefix is unknown (would otherwise leak
+  // Route each mirror-side scope to an upstream host + upstream-side repo
+  // path. Reject if a scope's prefix is unknown (would otherwise leak
   // arbitrary paths to docker.io) or if it disagrees with the wrap
   // envelope's `upstreamHost` (a replay attempt against a different
-  // upstream, or a client bug).
-  const mirrorRepo = extractRepoFromScope(scope);
-  if (!mirrorRepo) {
+  // upstream, or a client bug). Every requested repo lands in the minted
+  // JWT's access list, so every one must route and carry a proof — checking
+  // only the first would let a second scope ride along unverified. All
+  // routes are checked before any probe so a bad scope costs no round trip.
+  const mirrorRepos = extractReposFromScope(scope);
+  if (mirrorRepos.length === 0) {
     throw new WrappedUpstreamError('scope missing repository name', 'route_mismatch');
   }
-  const route = routeMirrorRepoToUpstream(mirrorRepo);
-  if (!route) {
-    throw new WrappedUpstreamError(
-      `unsupported mirror scope: ${mirrorRepo}`,
-      'route_mismatch',
-    );
-  }
-  if (!routeMatchesWrappedHost(route, creds.upstreamHost)) {
-    throw new WrappedUpstreamError(
-      `scope routes to ${route.host} but envelope says ${creds.upstreamHost}`,
-      'route_mismatch',
-    );
-  }
-  const upstreamRepo = route.upstreamRepo;
-
-  // Fast path: cached proof covers this exact identity + upstream repo.
-  if (deps.proofCache.get(identity, upstreamRepo)) {
-    return { identity, cacheHit: true };
-  }
-
-  // Slow path: probe the upstream.
-  const probe = (deps.resolveProbe ?? getProbeForHost)(route.host);
-  const result = await probe.probe(creds, upstreamRepo);
-  if (result.ok === false) {
-    if (result.reason === 'unauthorized') {
-      // Drop any stale proof so the next try has to re-probe.
-      deps.proofCache.invalidate(identity);
+  const routes = mirrorRepos.map((mirrorRepo) => {
+    const route = routeMirrorRepoToUpstream(mirrorRepo);
+    if (!route) {
+      throw new WrappedUpstreamError(
+        `unsupported mirror scope: ${mirrorRepo}`,
+        'route_mismatch',
+      );
     }
-    throw new WrappedUpstreamError(
-      `probe failed: ${result.reason}${result.detail ? `: ${result.detail}` : ''}`,
-      result.reason,
-    );
+    if (!routeMatchesWrappedHost(route, creds.upstreamHost)) {
+      throw new WrappedUpstreamError(
+        `scope routes to ${route.host} but envelope says ${creds.upstreamHost}`,
+        'route_mismatch',
+      );
+    }
+    return route;
+  });
+
+  let cacheHit = true;
+  for (const route of routes) {
+    // Fast path: cached proof covers this exact identity + upstream repo.
+    if (deps.proofCache.get(identity, route.upstreamRepo)) {
+      continue;
+    }
+
+    // Slow path: probe the upstream.
+    cacheHit = false;
+    const probe = (deps.resolveProbe ?? getProbeForHost)(route.host);
+    const result = await probe.probe(creds, route.upstreamRepo);
+    if (result.ok === false) {
+      if (result.reason === 'unauthorized') {
+        // Drop any stale proof so the next try has to re-probe.
+        deps.proofCache.invalidate(identity);
+      }
+      throw new WrappedUpstreamError(
+        `probe failed: ${result.reason}${result.detail ? `: ${result.detail}` : ''}`,
+        result.reason,
+      );
+    }
+    deps.proofCache.record(identity, route.upstreamRepo, result.upstreamBearer);
   }
-  deps.proofCache.record(identity, upstreamRepo, result.upstreamBearer);
-  return { identity, cacheHit: false };
+  return { identity, cacheHit };
 }

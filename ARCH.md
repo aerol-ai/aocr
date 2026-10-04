@@ -58,13 +58,15 @@ flowchart TD
    - static PAT match
    - cluster PAT match
    - upstream API validation via `VALIDATION_SERVICE_URL`
-4. On the API validation path, the auth service upserts the user in Postgres and optionally associates repository ownership based on the requested scope.
+4. On the API validation path, the auth service upserts the user in Postgres and associates ownership of each requested repository scope with that user.
+   `scope` may repeat (containerd sends `repository:X:pull` and `repository:X:pull,push` on every push); `auth/src/scope.ts` merges the entries per resource before the JWT `access` list is built and before cluster PAT and wrapped-upstream checks run on each one.
 5. The auth service signs an RS256 JWT with the configured private key and returns a Docker-compatible token payload.
 
 Important files:
 
 - `auth/src/server.ts`: request parsing, validation order, Postgres sync, JWT issuance
 - `auth/src/clusterPat.ts`: cluster PAT parsing and scope restriction rules
+- `auth/src/scope.ts`: `scope` query parsing (repeated params, merged actions, per-request cap)
 - `auth/src/metrics.ts`: latency and outcome metrics
 
 ### 2. Push Flow

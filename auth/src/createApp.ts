@@ -16,6 +16,7 @@ import {
   parseLimit,
   parseOffset,
 } from './imageList';
+import { MAX_REQUESTED_SCOPES, parseRequestedScopes, RequestedScope } from './scope';
 import { ProofCache } from './upstreamAuth/proofCache';
 import {
   WRAPPED_UPSTREAM_TOKEN_TTL_SECONDS,
@@ -81,10 +82,18 @@ export function createApp(options: CreateAppOptions): AuthApp {
 
   app.get('/v2/token', async (req, res) => {
     const { account, service, scope } = req.query;
+    const requestedScopes = parseRequestedScopes(scope);
     const authHeader = req.headers.authorization;
     let validationStrategy: ValidationResult['strategy'] | 'unknown' = 'unknown';
 
     try {
+      // Checked before validation so an oversized request never reaches the
+      // per-repository upstream probes on the wrapped-upstream path.
+      if (requestedScopes.length > MAX_REQUESTED_SCOPES) {
+        recordTokenIssuance(validationStrategy, 'error');
+        return res.status(400).json({ error: `too many scopes (max ${MAX_REQUESTED_SCOPES})` });
+      }
+
       const { validationToken, presentedIdentity } = extractPresentedCredentials(authHeader);
 
       const validationResult = await validatePresentedToken(validationToken, scope, validationContext);
@@ -123,18 +132,18 @@ export function createApp(options: CreateAppOptions): AuthApp {
           );
           const userId = userRes.rows[0].id;
 
-          if (scope) {
-            const [type, name] = (scope as string).split(':');
-            if (type === 'repository') {
-              const [org, repo] = name.split('/');
-              if (org && repo) {
-                await client.query(
-                  `INSERT INTO repositories (organization, name, user_id)
-                   VALUES ($1, $2, $3)
-                   ON CONFLICT (organization, name) DO UPDATE SET user_id = EXCLUDED.user_id`,
-                  [org, repo, userId],
-                );
-              }
+          for (const { type, name } of requestedScopes) {
+            if (type !== 'repository') {
+              continue;
+            }
+            const [org, repo] = name.split('/');
+            if (org && repo) {
+              await client.query(
+                `INSERT INTO repositories (organization, name, user_id)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (organization, name) DO UPDATE SET user_id = EXCLUDED.user_id`,
+                [org, repo, userId],
+              );
             }
           }
 
@@ -149,10 +158,11 @@ export function createApp(options: CreateAppOptions): AuthApp {
         }
       }
 
-      const access = [];
-      if (scope) {
-        const [type, name, actionsStr] = (scope as string).split(':');
-        const requestedActions = (actionsStr || '').split(',').filter((action) => action.length > 0);
+      // A cluster PAT is checked per resource. One outside the cluster's
+      // namespaces fails the whole request with that resource's reason, the
+      // same 401 a single disallowed scope has always produced.
+      const access: RequestedScope[] = [];
+      for (const { type, name, actions: requestedActions } of requestedScopes) {
         let permittedActions = requestedActions;
 
         if (validationResult.strategy === 'cluster-pat') {
